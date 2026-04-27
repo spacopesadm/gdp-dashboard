@@ -9,28 +9,31 @@ import os
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO CUSTOMIZADO (CORES BRANCO E DOURADO) ---
+# --- ESTILO CUSTOMIZADO (CORES DOURADO E PRETO) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #FFFFFF; color: #121212; }
+    /* Cor do Dourado Spaço Pés */
     :root { --gold: #c5a059; }
+
+    /* Estilo dos Títulos */
     h1, h2, h3 { color: var(--gold) !important; font-family: 'Segoe UI', sans-serif; }
+    
+    /* Botões */
     .stButton>button {
         background-color: var(--gold);
         color: black !important;
         border-radius: 8px;
         border: none;
         font-weight: bold;
-        width: 100%;
     }
     .stButton>button:hover { background-color: #e2c07d; color: black; }
+
+    /* Checkboxes */
     .stCheckbox { color: var(--gold); }
-    section[data-testid="stSidebar"] { background-color: #f8f9fa; border-right: 1px solid #e0e0e0; }
-    .stTextInput>div>div>input { background-color: white; color: #121212; border: 1px solid #c5a059; }
-    hr { border: 0.5px solid #e0e0e0; }
     </style>
     """, unsafe_allow_html=True)
 
+# --- FUNÇÕES (MANTIDAS) ---
 def limpar_numero(texto):
     return re.sub(r'\D', '', str(texto)) if pd.notnull(texto) else ""
 
@@ -79,85 +82,70 @@ def carregar_dados():
     try:
         df = pd.read_excel("Pasta1.xlsx")
         df.columns = [str(c).strip().upper() for c in df.columns]
-        
         c_tel = [c for c in df.columns if any(x in c for x in ['TEL', 'CEL', 'FONE'])][0]
         c_nom = [c for c in df.columns if 'NOME' in c or 'RAZ' in c][0]
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
         c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
         c_ven = [c for c in df.columns if 'VENC' in c][0]
+        return pd.DataFrame({'TEL': df[c_tel].apply(limpar_numero), 'CLIENTE': df[c_nom], 'VALOR': df[c_val].apply(tratar_valor_br), 'DOC': df[c_doc], 'VENC': pd.to_datetime(df[c_ven], errors='coerce')})
+    except: return None
 
-        return pd.DataFrame({
-            'TEL': df[c_tel].apply(limpar_numero),
-            'CLIENTE': df[c_nom],
-            'VALOR': df[c_val].apply(tratar_valor_br),
-            'DOC': df[c_doc],
-            'VENC': pd.to_datetime(df[c_ven], errors='coerce')
-        })
-    except:
-        return None
-
+# --- LÓGICA DO PORTAL ---
 if 'logado' not in st.session_state: st.session_state.logado = False
-df_base = carregar_dados()
+if 'dados' not in st.session_state: st.session_state.dados = None
 
-# --- TELA DE LOGIN ---
+df = carregar_dados()
+
 if not st.session_state.logado:
-    if os.path.exists("logo_horizontal.png"):
-        st.image("logo_horizontal.png", use_container_width=True)
-    else:
-        st.markdown("<h1 style='text-align: center;'>👠 SPAÇO PÉS</h1>", unsafe_allow_html=True)
+    # --- NOVA TELA DE LOGIN COM LOGO ---
+    col_l, col_m, col_r = st.columns([1, 2, 1])
+    with col_m:
+        if os.path.exists("logo_horizontal.png"):
+            st.image("logo_horizontal.png", use_container_width=True)
+        else:
+            st.markdown("<h1 style='text-align: center;'>👠 SPAÇO PÉS</h1>", unsafe_allow_html=True)
+            
+        st.markdown("<h3 style='text-align: center; color: var(--gold);'>Seja bem-vinda ao seu Portal de Clientes</h3>", unsafe_allow_html=True)
         
-    with st.columns([1, 1.5, 1])[1]:
-        acesso = limpar_numero(st.text_input("Seu Telefone", type="password"))
-        if st.button("ACESSAR MINHAS CONTAS"):
-            if df_base is not None and len(acesso) >= 8:
-                match = df_base[df_base['TEL'].str.endswith(acesso[-8:])]
-                if not match.empty:
-                    st.session_state.dados = match
-                    st.session_state.logado = True
-                    st.rerun()
-                else:
-                    st.error("Telefone não localizado.")
-
-# --- ÁREA DO CLIENTE ---
+        acesso = limpar_numero(st.text_input("Digite seu telefone cadastrado (DDD + Número)", type="password"))
+        if st.button("ACESSAR MINHAS CONTAS", use_container_width=True):
+            match = df[df['TEL'].str.endswith(acesso[-8:])] if df is not None and len(acesso) >= 8 else None
+            if match is not None and not match.empty:
+                st.session_state.dados = match
+                st.session_state.logado = True
+                st.rerun()
+            else: st.error("Telefone não localizado ou cadastro incompleto.")
 else:
+    # --- ÁREA DO CLIENTE MANTIDA ---
     notas = st.session_state.dados
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if os.path.exists("logo_icone.png"):
-            st.image("logo_icone.png", width=80)
-    with col2:
-        st.title(f"Olá, {notas['CLIENTE'].iloc[0]}")
-    
-    st.write("Selecione as faturas para pagar:")
+    st.title(f"Olá, {notas['CLIENTE'].iloc[0]}!")
+    st.write("Selecione as faturas que deseja pagar:")
+    st.divider()
+
     sel_val, sel_doc = [], []
-    
     for idx, r in notas.sort_values('VENC').iterrows():
         c1, c2, c3 = st.columns([0.5, 3, 1])
-        if c1.checkbox("Pagar", key=f"c_{idx}"):
+        if c1.checkbox("Selecionar", key=f"c_{idx}"):
             sel_val.append(r['VALOR'])
             sel_doc.append(r['DOC'])
-        
         vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
-        cor = "#FF4B4B" if vencido else "#c5a059"
-        
-        data_venc = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else '--'
-        c2.markdown(f"📄 Nota: {r['DOC']} | Vencimento: {data_venc}")
-        c3.markdown(f"<span style='color:{cor}; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
+        status = "VENCIDO" if vencido else "ABERTO"
+        c2.write(f"📄 Nota: {r['DOC']} | Vencimento: {r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else '--'}")
+        c3.markdown(f"**R$ {r['VALOR']:,.2f}** :[{status}]({'red' if vencido else 'green'})")
         st.divider()
 
+    # --- BARRA LATERAL ATUALIZADA COM LOGO ---
     with st.sidebar:
         if os.path.exists("logo_horizontal.png"):
             st.image("logo_horizontal.png", use_container_width=True)
-        
         st.header("Resumo")
         total = sum(sel_val)
         st.metric("Total Selecionado", f"R$ {total:,.2f}")
-        
         if total > 0:
             img, copia = gerar_pix_seguro(total, "pix@spacopes.com.br", "SPACO PES", "GOV VALADARES", sel_doc)
             st.image(img)
-            st.code(copia)
-        
-        if st.button("Sair"):
+            with st.expander("Código Copia e Cola"): st.code(copia)
+        st.write("---")
+        if st.button("Sair / Fazer Logout"):
             st.session_state.logado = False
             st.rerun()
