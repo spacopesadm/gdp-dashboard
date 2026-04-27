@@ -9,19 +9,19 @@ import os
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO CUSTOMIZADO (CORES DOURADO E PRETO) ---
+# --- ESTILO CUSTOMIZADO (CORES BRANCO E DOURADO) ---
 st.markdown("""
     <style>
-    /* Fundo da página e textos */
-    .stApp { background-color: #121212; color: #FFFFFF; }
+    /* Fundo da página e textos principais (Preto para boa leitura no branco) */
+    .stApp { background-color: #FFFFFF; color: #121212; }
     
     /* Cor do Dourado Spaço Pés */
     :root { --gold: #c5a059; }
 
-    /* Estilo dos Títulos */
+    /* Estilo dos Títulos (Sempre Dourado) */
     h1, h2, h3 { color: var(--gold) !important; font-family: 'Segoe UI', sans-serif; }
     
-    /* Botões */
+    /* Botões (Fundo Dourado, Texto Preto) */
     .stButton>button {
         background-color: var(--gold);
         color: black !important;
@@ -29,23 +29,38 @@ st.markdown("""
         border: none;
         font-weight: bold;
         width: 100%;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Sombra leve */
     }
-    .stButton>button:hover { background-color: #e2c07d; color: black; }
+    .stButton>button:hover { background-color: #e2c07d; color: black; border: none; }
 
-    /* Checkboxes */
+    /* Checkboxes (Dourado) */
     .stCheckbox { color: var(--gold); }
+    .stCheckbox [data-testid="stWidgetLabel"] > div { color: #121212 !important; } /* Texto do checkbox preto */
 
-    /* Barra Lateral */
-    section[data-testid="stSidebar"] { background-color: #1a1a1a; border-right: 1px solid #333; }
+    /* Barra Lateral (Branco Leve ou Gelo para destacar) */
+    section[data-testid="stSidebar"] { 
+        background-color: #f8f9fa; 
+        border-right: 1px solid #e0e0e0; 
+    }
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2 { color: var(--gold) !important; }
     
-    /* Inputs de texto */
-    .stTextInput>div>div>input { background-color: #262626; color: white; border: 1px solid #c5a059; }
+    /* Inputs de texto (Fundo branco, Borda dourada) */
+    .stTextInput>div>div>input { 
+        background-color: white; 
+        color: #121212; 
+        border: 1px solid #c5a059; 
+    }
     
-    /* Divider */
-    hr { border: 0.5px solid #333; }
+    /* Divider (Divisor de linha cinza leve) */
+    hr { border: 0.5px solid #e0e0e0; }
+
+    /* Status Text */
+    .stMarkdown p { color: #121212; }
     </style>
     """, unsafe_allow_html=True)
 
+# --- FUNÇÕES (MANTIDAS) ---
 def limpar_numero(texto):
     return re.sub(r'\D', '', str(texto)) if pd.notnull(texto) else ""
 
@@ -98,66 +113,4 @@ df = carregar_dados()
 if not st.session_state.logado:
     # Exibe a logo horizontal no topo se existir
     if os.path.exists("logo_horizontal.png"):
-        st.image("logo_horizontal.png", use_container_width=True)
-    else:
-        st.markdown("<h1 style='text-align: center;'>👠 SPAÇO PÉS</h1>", unsafe_allow_html=True)
-        
-    with st.columns([1, 1.5, 1])[1]:
-        st.markdown("<p style='text-align: center; color: #c5a059;'>Acesse seu extrato e pague via PIX</p>", unsafe_allow_html=True)
-        acesso = limpar_numero(st.text_input("Digite seu Telefone (DDD + Número)", type="password"))
-        if st.button("ENTRAR NO PORTAL"):
-            match = df[df['TEL'].str.endswith(acesso[-8:])] if df is not None and len(acesso) >= 8 else None
-            if match is not None and not match.empty:
-                st.session_state.dados = match
-                st.session_state.logado = True
-                st.rerun()
-            else: st.error("Telefone não localizado.")
-
-# --- ÁREA DO CLIENTE ---
-else:
-    notas = st.session_state.dados
-    
-    # Cabeçalho com Nome e Logo icone
-    col_logo, col_texto = st.columns([1, 4])
-    with col_logo:
-        if os.path.exists("logo_icone.png"):
-            st.image("logo_icone.png", width=100)
-    with col_texto:
-        st.title(f"Olá, {notas['CLIENTE'].iloc[0]}")
-    
-    st.write("Selecione as notas para pagar:")
-    st.divider()
-
-    sel_val, sel_doc = [], []
-    for idx, r in notas.sort_values('VENC').iterrows():
-        c1, c2, c3 = st.columns([0.5, 3, 1])
-        if c1.checkbox("Pagar", key=f"c_{idx}"):
-            sel_val.append(r['VALOR'])
-            sel_doc.append(r['DOC'])
-        vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
-        status = "VENCIDO" if vencido else "ABERTO"
-        cor_status = "#FF4B4B" if vencido else "#c5a059"
-        
-        c2.write(f"📄 Nota: {r['DOC']} | Vencimento: {r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else '--'}")
-        c3.markdown(f"<span style='color:{cor_status}; font-weight:bold;'>R$ {r['VALOR']:,.2f} ({status})</span>", unsafe_allow_html=True)
-        st.divider()
-
-    # --- BARRA LATERAL ---
-    with st.sidebar:
-        if os.path.exists("logo_horizontal.png"):
-            st.image("logo_horizontal.png", use_container_width=True)
-        
-        st.header("Pagamento")
-        total = sum(sel_val)
-        st.metric("Total Selecionado", f"R$ {total:,.2f}")
-        
-        if total > 0:
-            img, copia = gerar_pix_seguro(total, "pix@spacopes.com.br", "SPACO PES", "GOV VALADARES", sel_doc)
-            st.image(img, caption="Aponte a câmera do banco")
-            with st.expander("Código Copia e Cola"):
-                st.code(copia)
-        
-        st.markdown("---")
-        if st.button("Sair"):
-            st.session_state.logado = False
-            st.rerun()
+        st.image("logo_horizontal.png", use_container_width=True
