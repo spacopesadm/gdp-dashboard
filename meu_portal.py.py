@@ -34,8 +34,10 @@ def tratar_valor_br(valor):
     try: return float(v)
     except: return 0.0
 
-def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
+def gerar_pix_seguro(valor, chave, nome, cidade):
+    # Formato PIX estático simplificado para máxima compatibilidade
     def f(id, v): return f"{id}{len(v):02d}{v}"
+    
     payload = f("00", "01")
     payload += f("26", f("00", "br.gov.bcb.pix") + f("01", chave))
     payload += f("52", "0000")
@@ -44,8 +46,9 @@ def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
     payload += f("58", "BR")
     payload += f("59", nome[:25])
     payload += f("60", cidade[:15])
-    payload += f("62", f("05", "PAGAMENTO"))
+    payload += f("62", f("05", "***")) # TXID fixo simplifica o desenho do QR
     payload += "6304"
+    
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
         crc ^= (char << 8)
@@ -53,9 +56,11 @@ def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
             if (crc & 0x8000): crc = (crc << 1) ^ 0x1021
             else: crc <<= 1
     payload += hex(crc & 0xFFFF).upper().replace('0X', '').zfill(4)
-    qr = segno.make(payload, error='M')
+    
+    # Gerando o QR Code com baixa densidade (L) para facilitar a leitura da câmera
+    qr = segno.make(payload, error='L')
     buffer = io.BytesIO()
-    qr.save(buffer, kind='png', scale=10, border=4)
+    qr.save(buffer, kind='png', scale=15, border=4) 
     return buffer.getvalue(), payload
 
 @st.cache_data
@@ -70,6 +75,7 @@ def carregar_dados():
         c_ven = [c for c in df.columns if 'VENC' in c][0]
         c_pagto_list = [c for c in df.columns if any(x in c for x in ['PAGO', 'PAGTO', 'PAGAMENTO', 'BAIXA', 'DATA_P'])]
         c_pagto = c_pagto_list[0] if c_pagto_list else None
+        
         res = pd.DataFrame({
             'TEL': df[c_tel].apply(limpar_numero),
             'CLIENTE': df[c_nom],
@@ -89,7 +95,6 @@ def carregar_dados():
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
-# DEFINIÇÃO DA LOGO (Movida para antes do uso para evitar NameError)
 logos_possiveis = ["logo_horizontal.png.png", "Logo varias cores versao 21g - 2019.png"]
 logo_path = next((f for f in logos_possiveis if os.path.exists(f)), None)
 
@@ -98,7 +103,7 @@ if not st.session_state.logado:
     with col2:
         if logo_path: st.image(logo_path, use_container_width=True)
         st.write("### Portal do Cliente")
-        acesso = limpar_numero(st.text_input("Seu Telefone", type="password"))
+        acesso = limpar_numero(st.text_input("Seu Telefone (somente números)", type="password"))
         if st.button("ACESSAR"):
             if df_base is not None and len(acesso) >= 8:
                 match = df_base[df_base['TEL'].str.endswith(acesso[-8:])]
@@ -114,15 +119,15 @@ else:
 
     with tab1:
         pendentes = notas[notas['ESTA_PAGO'] == False]
-        sel_val, sel_doc = [], []
+        sel_val = []
         if pendentes.empty:
-            st.success("Não há contas pendentes.")
+            st.success("Tudo em dia!")
         else:
+            st.write("Selecione as faturas para pagar:")
             for idx, r in pendentes.sort_values('VENC').iterrows():
                 c1, c2, c3 = st.columns([0.5, 3, 1])
                 if c1.checkbox(f"Pagar Nota {r['DOC']}", key=f"sel_{idx}"):
                     sel_val.append(r['VALOR'])
-                    sel_doc.append(r['DOC'])
                 vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
                 cor = "red" if vencido else "#c5a059"
                 dv = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
@@ -146,19 +151,22 @@ else:
         st.header("Pagamento PIX")
         total_p = sum(sel_val)
         st.metric("Total Selecionado", f"R$ {total_p:,.2f}")
+        
         if total_p > 0:
-            # Substitua abaixo pelo seu PIX real
-            img_qr, copia = gerar_pix_seguro(total_p, "seu_pix@aqui.com", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
+            # Substitua abaixo pela sua chave PIX real (ex: CNPJ ou E-mail)
+            # A chave cadastrada na Spaço Pés deve ser colocada aqui:
+            img_qr, copia = gerar_pix_seguro(total_p, "SUA_CHAVE_PIX_AQUI", "SPAÇO PÉS", "GOV VALADARES")
             
-            # Moldura branca para leitura do QR Code
-            st.markdown('<div style="background-color: white; padding: 15px; border-radius: 10px; display: flex; justify-content: center; margin-bottom: 10px;">', unsafe_allow_html=True)
-            st.image(img_qr, width=200)
+            # Moldura branca maior para facilitar o foco da câmera
+            st.markdown('<div style="background-color: white; padding: 20px; border-radius: 10px; display: flex; justify-content: center;">', unsafe_allow_html=True)
+            st.image(img_qr, width=250)
             st.markdown('</div>', unsafe_allow_html=True)
             
-            st.info("Aponte a câmera ou copie o código:")
+            st.write("**Pix Copia e Cola:**")
             st.code(copia)
         else:
-            st.warning("Selecione uma fatura para gerar o PIX.")
+            st.warning("Selecione uma nota ao lado.")
+        
         if st.button("Sair"):
             st.session_state.logado = False
             st.rerun()
