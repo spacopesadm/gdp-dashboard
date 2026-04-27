@@ -12,16 +12,9 @@ st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="�
 # --- ESTILO CUSTOMIZADO (CORES BRANCO E DOURADO) ---
 st.markdown("""
     <style>
-    /* Fundo da página e textos principais (Preto para boa leitura no branco) */
     .stApp { background-color: #FFFFFF; color: #121212; }
-    
-    /* Cor do Dourado Spaço Pés */
     :root { --gold: #c5a059; }
-
-    /* Estilo dos Títulos (Sempre Dourado) */
     h1, h2, h3 { color: var(--gold) !important; font-family: 'Segoe UI', sans-serif; }
-    
-    /* Botões (Fundo Dourado, Texto Preto) */
     .stButton>button {
         background-color: var(--gold);
         color: black !important;
@@ -29,38 +22,15 @@ st.markdown("""
         border: none;
         font-weight: bold;
         width: 100%;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Sombra leve */
     }
-    .stButton>button:hover { background-color: #e2c07d; color: black; border: none; }
-
-    /* Checkboxes (Dourado) */
+    .stButton>button:hover { background-color: #e2c07d; color: black; }
     .stCheckbox { color: var(--gold); }
-    .stCheckbox [data-testid="stWidgetLabel"] > div { color: #121212 !important; } /* Texto do checkbox preto */
-
-    /* Barra Lateral (Branco Leve ou Gelo para destacar) */
-    section[data-testid="stSidebar"] { 
-        background-color: #f8f9fa; 
-        border-right: 1px solid #e0e0e0; 
-    }
-    section[data-testid="stSidebar"] h1, 
-    section[data-testid="stSidebar"] h2 { color: var(--gold) !important; }
-    
-    /* Inputs de texto (Fundo branco, Borda dourada) */
-    .stTextInput>div>div>input { 
-        background-color: white; 
-        color: #121212; 
-        border: 1px solid #c5a059; 
-    }
-    
-    /* Divider (Divisor de linha cinza leve) */
+    section[data-testid="stSidebar"] { background-color: #f8f9fa; border-right: 1px solid #e0e0e0; }
+    .stTextInput>div>div>input { background-color: white; color: #121212; border: 1px solid #c5a059; }
     hr { border: 0.5px solid #e0e0e0; }
-
-    /* Status Text */
-    .stMarkdown p { color: #121212; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES (MANTIDAS) ---
 def limpar_numero(texto):
     return re.sub(r'\D', '', str(texto)) if pd.notnull(texto) else ""
 
@@ -103,14 +73,4 @@ def carregar_dados():
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
         c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
         c_ven = [c for c in df.columns if 'VENC' in c][0]
-        return pd.DataFrame({'TEL': df[c_tel].apply(limpar_numero), 'CLIENTE': df[c_nom], 'VALOR': df[c_val].apply(tratar_valor_br), 'DOC': df[c_doc], 'VENC': pd.to_datetime(df[c_ven], errors='coerce')})
-    except: return None
-
-if 'logado' not in st.session_state: st.session_state.logado = False
-df = carregar_dados()
-
-# --- TELA DE LOGIN ---
-if not st.session_state.logado:
-    # Exibe a logo horizontal no topo se existir
-    if os.path.exists("logo_horizontal.png"):
-        st.image("logo_horizontal.png", use_container_width=True
+        return pd.DataFrame({'TEL': df[c_tel].apply(limpar_numero), 'CLIENTE': df[c_nom], 'VALOR': df[c_val].apply(tratar_valor_br), 'DOC': df[c_doc], 'VENC': pd.to_datetime(df[c
