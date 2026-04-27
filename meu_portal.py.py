@@ -52,10 +52,11 @@ def gerar_pix_seguro(valor, chave, nome, cidade):
     qr.save(buffer, kind='png', scale=15, border=4)
     return buffer.getvalue(), payload
 
-@st.cache_data
+# @st.cache_data  <-- Adicione um # na frente ou apague esta linha
 def carregar_dados():
     try:
         df = pd.read_excel("Pasta1.xlsx")
+        # ... resto do código
         df.columns = [str(c).strip().upper() for c in df.columns]
         c_tel = [c for c in df.columns if any(x in c for x in ['TEL', 'CEL', 'FONE'])][0]
         c_nom = [c for c in df.columns if 'NOME' in c or 'RAZ' in c][0]
