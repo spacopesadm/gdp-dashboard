@@ -6,10 +6,10 @@ import segno
 from datetime import datetime
 import os
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
+# --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO VISUAL (Dourado Spaço Pés) ---
+# --- ESTILO VISUAL ---
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF !important; }
@@ -23,7 +23,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE APOIO ---
+# --- FUNÇÕES ---
 def limpar_numero(texto):
     return re.sub(r'\D', '', str(texto)) if pd.notnull(texto) else ""
 
@@ -40,7 +40,6 @@ def gerar_pix_seguro(valor, chave, nome, cidade):
               f("52", "0000") + f("53", "986") + f("54", f"{valor:.2f}") + \
               f("58", "BR") + f("59", nome[:25]) + f("60", cidade[:15]) + \
               f("62", f("05", "PORTAL")) + "6304"
-    
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
         crc ^= (char << 8)
@@ -48,7 +47,6 @@ def gerar_pix_seguro(valor, chave, nome, cidade):
             if (crc & 0x8000): crc = (crc << 1) ^ 0x1021
             else: crc <<= 1
     payload += hex(crc & 0xFFFF).upper().replace('0X', '').zfill(4)
-    
     qr = segno.make(payload, error='M')
     buffer = io.BytesIO()
     qr.save(buffer, kind='png', scale=15, border=4)
@@ -64,7 +62,7 @@ def carregar_dados():
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
         c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
         c_ven = [c for c in df.columns if 'VENC' in c][0]
-        c_pagto = [c for c in df.columns if any(x in c for x in ['PAGO', 'PAGTO', 'PAGAMENTO', 'BAIXA'])][0]
+        c_pago = [c for c in df.columns if any(x in c for x in ['PAGO', 'PAGTO', 'PAGAMENTO', 'BAIXA'])][0]
         
         res = pd.DataFrame({
             'TEL': df[c_tel].apply(limpar_numero),
@@ -72,12 +70,12 @@ def carregar_dados():
             'VALOR': df[c_val].apply(tratar_valor_br),
             'DOC': df[c_doc],
             'VENC': pd.to_datetime(df[c_ven], errors='coerce'),
-            'PAGO': df[c_pagto]
+            'DT_PAGO': df[c_pago]
         })
         return res
     except: return None
 
-# --- LÓGICA PRINCIPAL ---
+# --- APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
@@ -99,35 +97,48 @@ if not st.session_state.logado:
 else:
     notas = st.session_state.dados
     st.markdown(f"## Olá, {notas['CLIENTE'].iloc[0]}")
-    tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagamentos"])
+    tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico"])
 
     with tab1:
-        # Apenas notas que NÃO possuem data de pagamento (em branco na planilha)
-        pendentes = notas[notas['PAGO'].isna()].sort_values('VENC')
+        # Só o que não tem data de pagamento
+        pendentes = notas[notas['DT_PAGO'].isna()].sort_values('VENC')
         sel_val = []
-        if pendentes.empty:
-            st.success("Tudo em dia! Nenhuma conta pendente.")
+        if pendentes.empty: st.success("Tudo pago!")
         else:
             for idx, r in pendentes.iterrows():
                 c1, c2, c3 = st.columns([0.5, 3, 1])
-                # Lógica para cor vermelha se vencido
                 hoje = datetime.now().date()
                 vencido = r['VENC'].date() < hoje if pd.notnull(r['VENC']) else False
-                cor_venc = "red" if vencido else "#121212"
+                cor = "red" if vencido else "#121212"
                 
                 if c1.checkbox(f"Pagar", key=idx): sel_val.append(r['VALOR'])
                 dv = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
-                c2.markdown(f"📄 Nota: {r['DOC']} | Vencimento: <span style='color:{cor_venc}; font-weight:bold;'>{dv}</span>", unsafe_allow_html=True)
+                c2.markdown(f"📄 Nota: {r['DOC']} | Vencimento: <span style='color:{cor}; font-weight:bold;'>{dv}</span>", unsafe_allow_html=True)
                 c3.write(f"**R$ {r['VALOR']:,.2f}**")
                 st.divider()
 
     with tab2:
-        # Notas que POSSUEM data de pagamento na planilha
-        pagas = notas[notas['PAGO'].notna()].sort_values('VENC', ascending=False)
-        if pagas.empty:
-            st.info("Nenhuma conta paga encontrada no histórico.")
+        # Só o que tem data de pagamento
+        pagas = notas[notas['DT_PAGO'].notna()].sort_values('VENC', ascending=False)
+        if pagas.empty: st.info("Sem histórico.")
         else:
             for _, r in pagas.iterrows():
-                col_a, col_b = st.columns([4, 1])
-                dt_p = str(r['PAGO'])[:10]
-                col
+                ca, cb = st.columns([4, 1])
+                ca.write(f"✅ Nota: {r['DOC']} | Pago em: {str(r['DT_PAGO'])[:10]}")
+                cb.markdown(f"<span style='color:green; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
+                st.divider()
+
+    with st.sidebar:
+        if logo_path: st.image(logo_path, use_container_width=True)
+        st.header("Pagamento")
+        total = sum(sel_val)
+        st.metric("Total", f"R$ {total:,.2f}")
+        if total > 0:
+            chave_loja = "pix@spacopes.com.br" # <--- CHAVE PIX AQUI
+            img_qr, copia = gerar_pix_seguro(total, chave_loja, "SPACO PES", "GOV VALADARES")
+            st.markdown('<div style="background-color: white; padding: 15px; border-radius: 10px; display: flex; justify-content: center;">', unsafe_allow_html=True)
+            st.image(img_qr, width=220)
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.code(copia)
+        else: st.warning("Selecione uma nota.")
+        st.button("Sair", on_click=lambda: st.session_state.update({"logado": False}))
