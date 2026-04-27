@@ -62,14 +62,13 @@ def carregar_dados():
         df = pd.read_excel("Pasta1.xlsx")
         df.columns = [str(c).strip().upper() for c in df.columns]
         
-        # Mapeamento flexível de colunas
         c_tel = [c for c in df.columns if any(x in c for x in ['TEL', 'CEL', 'FONE'])][0]
         c_nom = [c for c in df.columns if 'NOME' in c or 'RAZ' in c][0]
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
         c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
         c_ven = [c for c in df.columns if 'VENC' in c][0]
         
-        # Procura coluna de pagamento (onde tem a data de quando foi pago)
+        # Coluna de pagamento
         c_pagto_list = [c for c in df.columns if any(x in c for x in ['PAGO', 'PAGTO', 'PAGAMENTO', 'BAIXA', 'DATA_P'])]
         c_pagto = c_pagto_list[0] if c_pagto_list else None
         
@@ -82,16 +81,14 @@ def carregar_dados():
         })
         
         if c_pagto:
-            res['DT_PAGTO'] = pd.to_datetime(df[c_pagto], errors='coerce')
-            # É considerado pago apenas se a célula não estiver vazia e tiver uma data válida
-            res['ESTA_PAGO'] = res['DT_PAGTO'].notna()
+            # Se tiver algo escrito na coluna de pagamento, considera PAGO
+            res['ESTA_PAGO'] = df[c_pagto].notna()
+            res['INFO_PAGTO'] = df[c_pagto].astype(str).replace('nan', 'S/D')
         else:
             res['ESTA_PAGO'] = False
             
         return res
-    except Exception as e:
-        st.error(f"Erro ao ler colunas: {e}")
-        return None
+    except: return None
 
 # --- APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
@@ -104,7 +101,7 @@ if not st.session_state.logado:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if logo_path: st.image(logo_path, use_container_width=True)
-        st.write("### Acesso ao Portal")
+        st.write("### Portal do Cliente")
         acesso = limpar_numero(st.text_input("Seu Telefone", type="password"))
         if st.button("ACESSAR"):
             if df_base is not None and len(acesso) >= 8:
@@ -128,10 +125,42 @@ else:
         else:
             for idx, r in pendentes.sort_values('VENC').iterrows():
                 c1, c2, c3 = st.columns([0.5, 3, 1])
-                if c1.checkbox(f"Selecionar Nota {r['DOC']}", key=f"sel_{idx}"):
+                if c1.checkbox(f"Pagar Nota {r['DOC']}", key=f"sel_{idx}"):
                     sel_val.append(r['VALOR'])
                     sel_doc.append(r['DOC'])
                 
                 vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
                 cor = "red" if vencido else "#c5a059"
-                c2.write(f"📄 Vencimento: {r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else '
+                data_v = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
+                c2.write(f"📄 Vencimento: {data_v}")
+                c3.markdown(f"<span style='color:{cor}; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
+                st.divider()
+
+    with tab2:
+        pagas = notas[notas['ESTA_PAGO'] == True]
+        if pagas.empty:
+            st.info("Nenhuma conta paga encontrada.")
+        else:
+            for _, r in pagas.iterrows():
+                ch1, ch2 = st.columns([4, 1])
+                ch1.write(f"✅ Nota: {r['DOC']} | Info: {r['INFO_PAGTO']}")
+                ch2.markdown(f"<span style='color:green; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
+                st.divider()
+
+    with st.sidebar:
+        if logo_path: st.image(logo_path, use_container_width=True)
+        st.header("Pagamento PIX")
+        total_p = sum(sel_val)
+        st.metric("Total", f"R$ {total_p:,.2f}")
+        
+        if total_p > 0:
+            # TROQUE PARA O SEU PIX REAL
+            img_qr, copia = gerar_pix_seguro(total_p, "pix@spacopes.com.br", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
+            st.image(img_qr, use_container_width=True)
+            st.code(copia)
+        else:
+            st.warning("Selecione uma fatura para gerar o QR Code.")
+        
+        if st.button("Sair"):
+            st.session_state.logado = False
+            st.rerun()
