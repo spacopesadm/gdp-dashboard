@@ -35,22 +35,21 @@ def tratar_valor_br(valor):
     except: return 0.0
 
 def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
-    # Formatação padrão BC (EMV QRCPS)
     def f(id, v): return f"{id}{len(v):02d}{v}"
     
-    # Payload Estruturado Simplificado
-    payload = f("00", "01") # Payload Format Indicator
-    payload += f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) # Merchant Account Info
-    payload += f("52", "0000") # Merchant Category Code
-    payload += f("53", "986") # Transaction Currency (BRL)
-    payload += f("54", f"{valor:.2f}") # Transaction Amount
-    payload += f("58", "BR") # Country Code
-    payload += f("59", nome[:25]) # Merchant Name
-    payload += f("60", cidade[:15]) # Merchant City
-    payload += f("62", f("05", "PAGAMENTO")) # Transaction ID (TXID curto e simples)
-    payload += "6304" # CRC16 Indicator
+    # Payload Padrão
+    payload = f("00", "01")
+    payload += f("26", f("00", "br.gov.bcb.pix") + f("01", chave))
+    payload += f("52", "0000")
+    payload += f("53", "986")
+    payload += f("54", f"{valor:.2f}")
+    payload += f("58", "BR")
+    payload += f("59", nome[:25])
+    payload += f("60", cidade[:15])
+    payload += f("62", f("05", "PAGAMENTO"))
+    payload += "6304"
     
-    # Cálculo do CRC16 (Essencial para o banco validar)
+    # Cálculo do CRC16
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
         crc ^= (char << 8)
@@ -59,9 +58,11 @@ def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
             else: crc <<= 1
     payload += hex(crc & 0xFFFF).upper().replace('0X', '').zfill(4)
     
+    # AJUSTE NA GERAÇÃO DA IMAGEM:
     qr = segno.make(payload)
     buffer = io.BytesIO()
-    qr.save(buffer, kind='png', scale=10)
+    # Aumentamos o border para 4 e o scale para 10 para ficar bem nítido
+    qr.save(buffer, kind='png', scale=10, border=4) 
     return buffer.getvalue(), payload
 
 @st.cache_data
