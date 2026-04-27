@@ -37,7 +37,7 @@ def tratar_valor_br(valor):
 def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
     def f(id, v): return f"{id}{len(v):02d}{v}"
     
-    # Payload Padrão
+    # Payload Estático
     payload = f("00", "01")
     payload += f("26", f("00", "br.gov.bcb.pix") + f("01", chave))
     payload += f("52", "0000")
@@ -49,7 +49,7 @@ def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
     payload += f("62", f("05", "PAGAMENTO"))
     payload += "6304"
     
-    # Cálculo do CRC16
+    # CRC16
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
         crc ^= (char << 8)
@@ -58,12 +58,33 @@ def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
             else: crc <<= 1
     payload += hex(crc & 0xFFFF).upper().replace('0X', '').zfill(4)
     
-    # AJUSTE NA GERAÇÃO DA IMAGEM:
-    qr = segno.make(payload)
+    # Geração com micro-ajuste de contraste
+    qr = segno.make(payload, error='M') # 'M' ajuda na recuperação de erro da câmera
     buffer = io.BytesIO()
-    # Aumentamos o border para 4 e o scale para 10 para ficar bem nítido
-    qr.save(buffer, kind='png', scale=10, border=4) 
+    qr.save(buffer, kind='png', scale=10, border=4) # Borda branca larga
     return buffer.getvalue(), payload
+
+# --- NA PARTE DO SIDEBAR (FINAL DO CÓDIGO) ---
+with st.sidebar:
+    if logo_path: st.image(logo_path, use_container_width=True)
+    st.header("Pagamento PIX")
+    total_p = sum(sel_val)
+    st.metric("Total", f"R$ {total_p:,.2f}")
+    
+    if total_p > 0:
+        img_qr, copia = gerar_pix_seguro(total_p, "pix@spacopes.com.br", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
+        
+        # CRIAR UMA MOLDURA BRANCA COM CSS PARA AJUDAR O FOCO
+        st.markdown("""
+            <div style="background-color: white; padding: 20px; border-radius: 10px; display: flex; justify-content: center; margin-bottom: 15px;">
+        """, unsafe_allow_html=True)
+        st.image(img_qr, width=200) # Tamanho fixo para não distorcer
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.info("Aponte a câmera acima ou use o código abaixo:")
+        st.code(copia)
+    else:
+        st.warning("Selecione uma fatura ao lado.")
 
 @st.cache_data
 def carregar_dados():
