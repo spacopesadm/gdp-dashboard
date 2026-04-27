@@ -9,31 +9,26 @@ import os
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO CUSTOMIZADO (CORES DOURADO E PRETO) ---
+# --- ESTILO CUSTOMIZADO (BRANCO E DOURADO) ---
 st.markdown("""
     <style>
-    /* Cor do Dourado Spaço Pés */
+    .stApp { background-color: #FFFFFF; color: #121212; }
     :root { --gold: #c5a059; }
-
-    /* Estilo dos Títulos */
     h1, h2, h3 { color: var(--gold) !important; font-family: 'Segoe UI', sans-serif; }
-    
-    /* Botões */
     .stButton>button {
         background-color: var(--gold);
         color: black !important;
         border-radius: 8px;
         border: none;
         font-weight: bold;
+        width: 100%;
     }
-    .stButton>button:hover { background-color: #e2c07d; color: black; }
-
-    /* Checkboxes */
     .stCheckbox { color: var(--gold); }
+    section[data-testid="stSidebar"] { background-color: #f8f9fa; border-right: 1px solid #e0e0e0; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES (MANTIDAS) ---
+# --- FUNÇÕES ---
 def limpar_numero(texto):
     return re.sub(r'\D', '', str(texto)) if pd.notnull(texto) else ""
 
@@ -54,15 +49,7 @@ def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
     txid = re.sub(r'[^A-Z0-9]', '', txt_notas.upper())[:25]
     if not txid: txid = "PORTAL"
     
-    payload = f("00", "01") 
-    payload += f("26", f("00", "br.gov.bcb.pix") + f("01", chave))
-    payload += "520400005303986" 
-    payload += f("54", f"{valor:.2f}")
-    payload += "5802BR" 
-    payload += f("59", nome[:25])
-    payload += f("60", cidade[:15])
-    payload += f("62", f("05", txid)) 
-    payload += "6304"
+    payload = f("00", "01") + f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) + "520400005303986" + f("54", f"{valor:.2f}") + "5802BR" + f("59", nome[:25]) + f("60", cidade[:15]) + f("62", f("05", txid)) + "6304"
     
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
@@ -87,65 +74,57 @@ def carregar_dados():
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
         c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
         c_ven = [c for c in df.columns if 'VENC' in c][0]
-        return pd.DataFrame({'TEL': df[c_tel].apply(limpar_numero), 'CLIENTE': df[c_nom], 'VALOR': df[c_val].apply(tratar_valor_br), 'DOC': df[c_doc], 'VENC': pd.to_datetime(df[c_ven], errors='coerce')})
+        return pd.DataFrame({
+            'TEL': df[c_tel].apply(limpar_numero),
+            'CLIENTE': df[c_nom],
+            'VALOR': df[c_val].apply(tratar_valor_br),
+            'DOC': df[c_doc],
+            'VENC': pd.to_datetime(df[c_ven], errors='coerce')
+        })
     except: return None
 
-# --- LÓGICA DO PORTAL ---
+# --- INÍCIO DO APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
-if 'dados' not in st.session_state: st.session_state.dados = None
+df_base = carregar_dados()
 
-df = carregar_dados()
+# Lista de possíveis nomes da logo que estão no seu GitHub
+arquivos_logo = ["logo_horizontal.png.png", "Logo varias cores versao 21g - 2019.png"]
+logo_path = next((f for f in arquivos_logo if os.path.exists(f)), None)
 
 if not st.session_state.logado:
-    # --- NOVA TELA DE LOGIN COM LOGO ---
-    col_l, col_m, col_r = st.columns([1, 2, 1])
-    with col_m:
-        if os.path.exists("logo_horizontal.png"):
-            st.image("logo_horizontal.png", use_container_width=True)
-        else:
-            st.markdown("<h1 style='text-align: center;'>👠 SPAÇO PÉS</h1>", unsafe_allow_html=True)
-            
-        st.markdown("<h3 style='text-align: center; color: var(--gold);'>Seja bem-vinda ao seu Portal de Clientes</h3>", unsafe_allow_html=True)
+    # Mostra a logo se encontrar algum dos arquivos
+    if logo_path:
+        st.image(logo_path, use_container_width=True)
+    else:
+        st.markdown("<h1 style='text-align: center;'>👠 SPAÇO PÉS</h1>", unsafe_allow_html=True)
         
-        acesso = limpar_numero(st.text_input("Digite seu telefone cadastrado (DDD + Número)", type="password"))
-        if st.button("ACESSAR MINHAS CONTAS", use_container_width=True):
-            match = df[df['TEL'].str.endswith(acesso[-8:])] if df is not None and len(acesso) >= 8 else None
-            if match is not None and not match.empty:
-                st.session_state.dados = match
-                st.session_state.logado = True
-                st.rerun()
-            else: st.error("Telefone não localizado ou cadastro incompleto.")
-else:
-    # --- ÁREA DO CLIENTE MANTIDA ---
-    notas = st.session_state.dados
-    st.title(f"Olá, {notas['CLIENTE'].iloc[0]}!")
-    st.write("Selecione as faturas que deseja pagar:")
-    st.divider()
+    with st.columns([1, 1.5, 1])[1]:
+        acesso = limpar_numero(st.text_input("Seu Telefone", type="password"))
+        if st.button("ACESSAR MINHAS CONTAS"):
+            if df_base is not None and len(acesso) >= 8:
+                match = df_base[df_base['TEL'].str.endswith(acesso[-8:])]
+                if not match.empty:
+                    st.session_state.dados = match
+                    st.session_state.logado = True
+                    st.rerun()
+                else: st.error("Telefone não localizado.")
 
+else:
+    notas = st.session_state.dados
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        # Tenta carregar o ícone redondo se você subir ele com esse nome
+        if os.path.exists("Sem título-451.png"):
+            st.image("Sem título-451.png", width=80)
+    with col2:
+        st.title(f"Olá, {notas['CLIENTE'].iloc[0]}")
+    
+    st.write("Selecione as faturas para pagar:")
     sel_val, sel_doc = [], []
     for idx, r in notas.sort_values('VENC').iterrows():
         c1, c2, c3 = st.columns([0.5, 3, 1])
-        if c1.checkbox("Selecionar", key=f"c_{idx}"):
+        if c1.checkbox("Pagar", key=f"c_{idx}"):
             sel_val.append(r['VALOR'])
             sel_doc.append(r['DOC'])
         vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
-        status = "VENCIDO" if vencido else "ABERTO"
-        c2.write(f"📄 Nota: {r['DOC']} | Vencimento: {r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else '--'}")
-        c3.markdown(f"**R$ {r['VALOR']:,.2f}** :[{status}]({'red' if vencido else 'green'})")
-        st.divider()
-
-    # --- BARRA LATERAL ATUALIZADA COM LOGO ---
-    with st.sidebar:
-        if os.path.exists("logo_horizontal.png"):
-            st.image("logo_horizontal.png", use_container_width=True)
-        st.header("Resumo")
-        total = sum(sel_val)
-        st.metric("Total Selecionado", f"R$ {total:,.2f}")
-        if total > 0:
-            img, copia = gerar_pix_seguro(total, "pix@spacopes.com.br", "SPACO PES", "GOV VALADARES", sel_doc)
-            st.image(img)
-            with st.expander("Código Copia e Cola"): st.code(copia)
-        st.write("---")
-        if st.button("Sair / Fazer Logout"):
-            st.session_state.logado = False
-            st.rerun()
+        cor = "#FF4B4B" if vencido else "#c5a059"
