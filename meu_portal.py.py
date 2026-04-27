@@ -35,9 +35,8 @@ def tratar_valor_br(valor):
     except: return 0.0
 
 def gerar_pix_seguro(valor, chave, nome, cidade):
-    # Formato PIX estático simplificado para máxima compatibilidade
     def f(id, v): return f"{id}{len(v):02d}{v}"
-    
+    # Payload PIX Estático (Padrão Banco Central)
     payload = f("00", "01")
     payload += f("26", f("00", "br.gov.bcb.pix") + f("01", chave))
     payload += f("52", "0000")
@@ -46,7 +45,7 @@ def gerar_pix_seguro(valor, chave, nome, cidade):
     payload += f("58", "BR")
     payload += f("59", nome[:25])
     payload += f("60", cidade[:15])
-    payload += f("62", f("05", "***")) # TXID fixo simplifica o desenho do QR
+    payload += f("62", f("05", "PORTAL")) # TXID simples
     payload += "6304"
     
     crc = 0xFFFF
@@ -57,10 +56,9 @@ def gerar_pix_seguro(valor, chave, nome, cidade):
             else: crc <<= 1
     payload += hex(crc & 0xFFFF).upper().replace('0X', '').zfill(4)
     
-    # Gerando o QR Code com baixa densidade (L) para facilitar a leitura da câmera
-    qr = segno.make(payload, error='L')
+    qr = segno.make(payload, error='M')
     buffer = io.BytesIO()
-    qr.save(buffer, kind='png', scale=15, border=4) 
+    qr.save(buffer, kind='png', scale=15, border=4)
     return buffer.getvalue(), payload
 
 @st.cache_data
@@ -91,7 +89,7 @@ def carregar_dados():
         return res
     except: return None
 
-# --- LÓGICA DO APP ---
+# --- APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
@@ -103,7 +101,7 @@ if not st.session_state.logado:
     with col2:
         if logo_path: st.image(logo_path, use_container_width=True)
         st.write("### Portal do Cliente")
-        acesso = limpar_numero(st.text_input("Seu Telefone (somente números)", type="password"))
+        acesso = limpar_numero(st.text_input("Seu Telefone", type="password"))
         if st.button("ACESSAR"):
             if df_base is not None and len(acesso) >= 8:
                 match = df_base[df_base['TEL'].str.endswith(acesso[-8:])]
@@ -123,49 +121,32 @@ else:
         if pendentes.empty:
             st.success("Tudo em dia!")
         else:
-            st.write("Selecione as faturas para pagar:")
             for idx, r in pendentes.sort_values('VENC').iterrows():
                 c1, c2, c3 = st.columns([0.5, 3, 1])
                 if c1.checkbox(f"Pagar Nota {r['DOC']}", key=f"sel_{idx}"):
                     sel_val.append(r['VALOR'])
-                vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
-                cor = "red" if vencido else "#c5a059"
                 dv = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
                 c2.write(f"📄 Vencimento: {dv}")
-                c3.markdown(f"<span style='color:{cor}; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
-                st.divider()
-
-    with tab2:
-        pagas = notas[notas['ESTA_PAGO'] == True]
-        if pagas.empty:
-            st.info("Nenhuma conta paga encontrada.")
-        else:
-            for _, r in pagas.iterrows():
-                ch1, ch2 = st.columns([4, 1])
-                ch1.write(f"✅ Nota: {r['DOC']} | Info: {r['INFO_PAGTO']}")
-                ch2.markdown(f"<span style='color:green; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
+                c3.write(f"**R$ {r['VALOR']:,.2f}**")
                 st.divider()
 
     with st.sidebar:
         if logo_path: st.image(logo_path, use_container_width=True)
         st.header("Pagamento PIX")
         total_p = sum(sel_val)
-        st.metric("Total Selecionado", f"R$ {total_p:,.2f}")
+        st.metric("Total", f"R$ {total_p:,.2f}")
         
         if total_p > 0:
-            # Substitua abaixo pela sua chave PIX real (ex: CNPJ ou E-mail)
-            # A chave cadastrada na Spaço Pés deve ser colocada aqui:
-            img_qr, copia = gerar_pix_seguro(total_p, "SUA_CHAVE_PIX_AQUI", "SPAÇO PÉS", "GOV VALADARES")
+            # ATENÇÃO JACÓ: COLOQUE A CHAVE PIX DA LOJA ABAIXO
+            # Exemplo: "12345678000199" (se for CNPJ) ou "contato@spacopes.com"
+            img_qr, copia = gerar_pix_seguro(total_p, "pix@spacopes.com.br", "SPAÇO PÉS", "GOV VALADARES")
             
-            # Moldura branca maior para facilitar o foco da câmera
-            st.markdown('<div style="background-color: white; padding: 20px; border-radius: 10px; display: flex; justify-content: center;">', unsafe_allow_html=True)
-            st.image(img_qr, width=250)
+            st.markdown('<div style="background-color: white; padding: 15px; border-radius: 10px; display: flex; justify-content: center;">', unsafe_allow_html=True)
+            st.image(img_qr, width=230)
             st.markdown('</div>', unsafe_allow_html=True)
-            
-            st.write("**Pix Copia e Cola:**")
             st.code(copia)
         else:
-            st.warning("Selecione uma nota ao lado.")
+            st.warning("Selecione uma nota.")
         
         if st.button("Sair"):
             st.session_state.logado = False
