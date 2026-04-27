@@ -9,22 +9,15 @@ import os
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO VISUAL (MANTIDO BRANCO E DOURADO) ---
+# --- ESTILO VISUAL ---
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF !important; }
     :root { --gold: #c5a059; }
     p, span, label, .stMarkdown { color: #121212 !important; }
     h1, h2, h3 { color: var(--gold) !important; font-family: 'Segoe UI', sans-serif; }
-    .stButton>button {
-        background-color: var(--gold);
-        color: white !important;
-        border-radius: 8px;
-        font-weight: bold;
-        width: 100%;
-    }
+    .stButton>button { background-color: var(--gold); color: white !important; border-radius: 8px; font-weight: bold; width: 100%; }
     section[data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #e0e0e0; }
-    /* Estilo das Abas */
     .stTabs [data-baseweb="tab"] { color: #121212; }
     .stTabs [aria-selected="true"] { color: var(--gold) !important; border-bottom-color: var(--gold) !important; }
     </style>
@@ -65,15 +58,16 @@ def carregar_dados():
     try:
         df = pd.read_excel("Pasta1.xlsx")
         df.columns = [str(c).strip().upper() for c in df.columns]
+        
         c_tel = [c for c in df.columns if any(x in c for x in ['TEL', 'CEL', 'FONE'])][0]
         c_nom = [c for c in df.columns if 'NOME' in c or 'RAZ' in c][0]
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
         c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
         c_ven = [c for c in df.columns if 'VENC' in c][0]
-        # Procura coluna de status (opcional)
-        c_sta = [c for c in df.columns if 'STATUS' in c or 'SITU' in c]
-        status_col = c_sta[0] if c_sta else None
-
+        
+        # Procura coluna de data de pagamento (onde se tiver data tá pago, se tiver vazio não tá)
+        c_pagto = [c for c in df.columns if any(x in c for x in ['DATA PAGO', 'DT PAGO', 'PAGAMENTO', 'DT_PAGTO', 'DATA_PAG'])]
+        
         res = pd.DataFrame({
             'TEL': df[c_tel].apply(limpar_numero),
             'CLIENTE': df[c_nom],
@@ -81,12 +75,18 @@ def carregar_dados():
             'DOC': df[c_doc],
             'VENC': pd.to_datetime(df[c_ven], errors='coerce')
         })
-        if status_col: res['STATUS'] = df[status_col].str.upper().str.strip()
-        else: res['STATUS'] = 'ABERTO' # Se não houver coluna, assume aberto
+        
+        if c_pagto:
+            # Converte para data e marca como PAGO se não estiver vazio
+            res['DT_PAGTO'] = pd.to_datetime(df[c_pagto[0]], errors='coerce')
+            res['ESTA_PAGO'] = res['DT_PAGTO'].notna()
+        else:
+            res['ESTA_PAGO'] = False
+            
         return res
     except: return None
 
-# --- LÓGICA ---
+# --- LÓGICA DO APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
@@ -106,22 +106,20 @@ if not st.session_state.logado:
                     st.session_state.dados = match
                     st.session_state.logado = True
                     st.rerun()
-                else: st.error("Telefone não encontrado.")
+                else: st.error("Telefone não localizado.")
 else:
     notas = st.session_state.dados
     st.title(f"Olá, {notas['CLIENTE'].iloc[0]}")
     
-    # --- CRIAÇÃO DAS ABAS ---
-    aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico (Pagas)"])
+    aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagamentos"])
 
     with aba_pendente:
-        # Filtra apenas o que NÃO está pago
-        pendentes = notas[notas['STATUS'] != 'PAGA']
+        pendentes = notas[notas['ESTA_PAGO'] == False]
         if pendentes.empty:
-            st.success("Você não possui contas pendentes no momento!")
+            st.success("Tudo em dia! Nenhuma conta pendente.")
             sel_val, sel_doc = [], []
         else:
-            st.write("Selecione as faturas para pagar:")
+            st.write("Selecione para pagar:")
             sel_val, sel_doc = [], []
             for idx, r in pendentes.sort_values('VENC').iterrows():
                 c1, c2, c3 = st.columns([0.5, 3, 1])
@@ -129,32 +127,15 @@ else:
                     sel_val.append(r['VALOR'])
                     sel_doc.append(r['DOC'])
                 vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
-                status_cor = "red" if vencido else "#c5a059"
+                cor = "red" if vencido else "#c5a059"
                 c2.markdown(f"📄 **Vencimento:** {r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else 'S/D'}")
-                c3.markdown(f"<span style='color:{status_cor}; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
+                c3.markdown(f"<span style='color:{cor}; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
                 st.divider()
 
     with aba_pago:
-        # Filtra apenas o que está pago
-        pagas = notas[notas['STATUS'] == 'PAGA']
+        pagas = notas[notas['ESTA_PAGO'] == True]
         if pagas.empty:
-            st.info("Nenhuma fatura paga encontrada no histórico.")
+            st.info("O seu histórico de pagamentos aparecerá aqui assim que as faturas forem baixadas.")
         else:
-            for idx, r in pagas.sort_values('VENC', ascending=False).iterrows():
-                c1, c2 = st.columns([4, 1])
-                c1.markdown(f"✅ **Nota:** {r['DOC']} | Pago em: {r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else 'S/D'}")
-                c2.markdown(f"<span style='color:green; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
-                st.divider()
-
-    with st.sidebar:
-        if logo_path: st.image(logo_path, use_container_width=True)
-        st.header("Pagamento")
-        total = sum(sel_val) if 'sel_val' in locals() else 0
-        st.metric("Total Selecionado", f"R$ {total:,.2f}")
-        if total > 0:
-            img_qr, copia_cola = gerar_pix_seguro(total, "COLOQUE_SEU_PIX_AQUI", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
-            st.image(img_qr, use_container_width=True)
-            st.code(copia_cola)
-        if st.button("Sair"):
-            st.session_state.logado = False
-            st.rerun()
+            for _, r in pagas.sort_values('DT_PAGTO', ascending=False).iterrows():
+                col_h1,
