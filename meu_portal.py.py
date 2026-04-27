@@ -9,20 +9,14 @@ import os
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO VISUAL (BRANCO E DOURADO) ---
+# --- ESTILO VISUAL ---
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF !important; }
     :root { --gold: #c5a059; }
     p, span, label, .stMarkdown { color: #121212 !important; font-weight: 500 !important; }
     h1, h2, h3 { color: var(--gold) !important; font-family: 'Segoe UI', sans-serif; }
-    .stButton>button {
-        background-color: var(--gold);
-        color: white !important;
-        border-radius: 8px;
-        font-weight: bold;
-        width: 100%;
-    }
+    .stButton>button { background-color: var(--gold); color: white !important; border-radius: 8px; font-weight: bold; width: 100%; }
     section[data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #e0e0e0; }
     .stTabs [data-baseweb="tab"] { color: #121212; }
     .stTabs [aria-selected="true"] { color: var(--gold) !important; border-bottom-color: var(--gold) !important; }
@@ -68,14 +62,16 @@ def carregar_dados():
         df = pd.read_excel("Pasta1.xlsx")
         df.columns = [str(c).strip().upper() for c in df.columns]
         
+        # Mapeamento flexível de colunas
         c_tel = [c for c in df.columns if any(x in c for x in ['TEL', 'CEL', 'FONE'])][0]
         c_nom = [c for c in df.columns if 'NOME' in c or 'RAZ' in c][0]
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
         c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
         c_ven = [c for c in df.columns if 'VENC' in c][0]
         
-        # Procura coluna de data de pagamento de forma muito mais ampla
-        c_pagto = [c for c in df.columns if any(x in c for x in ['PAG', 'PAGO', 'PAGTO', 'PAGAMENTO', 'BAIXA'])]
+        # Procura coluna de pagamento (onde tem a data de quando foi pago)
+        c_pagto_list = [c for c in df.columns if any(x in c for x in ['PAGO', 'PAGTO', 'PAGAMENTO', 'BAIXA', 'DATA_P'])]
+        c_pagto = c_pagto_list[0] if c_pagto_list else None
         
         res = pd.DataFrame({
             'TEL': df[c_tel].apply(limpar_numero),
@@ -86,15 +82,18 @@ def carregar_dados():
         })
         
         if c_pagto:
-            res['DT_PAGTO'] = pd.to_datetime(df[c_pagto[0]], errors='coerce')
+            res['DT_PAGTO'] = pd.to_datetime(df[c_pagto], errors='coerce')
+            # É considerado pago apenas se a célula não estiver vazia e tiver uma data válida
             res['ESTA_PAGO'] = res['DT_PAGTO'].notna()
         else:
             res['ESTA_PAGO'] = False
             
         return res
-    except: return None
+    except Exception as e:
+        st.error(f"Erro ao ler colunas: {e}")
+        return None
 
-# --- LÓGICA DO APP ---
+# --- APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
@@ -105,7 +104,7 @@ if not st.session_state.logado:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if logo_path: st.image(logo_path, use_container_width=True)
-        st.write("### Portal do Cliente")
+        st.write("### Acesso ao Portal")
         acesso = limpar_numero(st.text_input("Seu Telefone", type="password"))
         if st.button("ACESSAR"):
             if df_base is not None and len(acesso) >= 8:
@@ -119,54 +118,20 @@ else:
     notas = st.session_state.dados
     st.markdown(f"## Olá, {notas['CLIENTE'].iloc[0]}")
     
-    aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagamentos"])
+    tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagamentos"])
 
-    with aba_pendente:
+    with tab1:
         pendentes = notas[notas['ESTA_PAGO'] == False]
         sel_val, sel_doc = [], []
         if pendentes.empty:
-            st.success("Tudo em dia!")
+            st.success("Não há contas pendentes.")
         else:
-            st.write("Selecione as faturas para gerar o PIX:")
             for idx, r in pendentes.sort_values('VENC').iterrows():
                 c1, c2, c3 = st.columns([0.5, 3, 1])
-                if c1.checkbox(f"Selecionar Nota {r['DOC']}", key=f"c_{idx}"):
+                if c1.checkbox(f"Selecionar Nota {r['DOC']}", key=f"sel_{idx}"):
                     sel_val.append(r['VALOR'])
                     sel_doc.append(r['DOC'])
                 
                 vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
                 cor = "red" if vencido else "#c5a059"
-                dt_v = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
-                c2.markdown(f"📄 **Vencimento:** {dt_v}")
-                c3.markdown(f"<span style='color:{cor}; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
-                st.divider()
-
-    with aba_pago:
-        pagas = notas[notas['ESTA_PAGO'] == True]
-        if pagas.empty:
-            st.info("Nenhuma conta paga encontrada no histórico.")
-        else:
-            for _, r in pagas.sort_values('DT_PAGTO', ascending=False).iterrows():
-                ch1, ch2 = st.columns([4, 1])
-                dt_p = r['DT_PAGTO'].strftime('%d/%m/%Y')
-                ch1.markdown(f"✅ **Nota:** {r['DOC']} | Pago em: **{dt_p}**")
-                ch2.markdown(f"<span style='color:green; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
-                st.divider()
-
-    with st.sidebar:
-        if logo_path: st.image(logo_path, use_container_width=True)
-        st.header("Pagamento")
-        total_pagar = sum(sel_val)
-        st.metric("Total Selecionado", f"R$ {total_pagar:,.2f}")
-        
-        if total_pagar > 0:
-            # Substitua abaixo pela sua chave PIX real
-            img_qr, copia = gerar_pix_seguro(total_pagar, "pix@spacopes.com.br", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
-            st.image(img_qr, use_container_width=True)
-            st.code(copia)
-        else:
-            st.warning("Selecione uma nota ao lado.")
-            
-        if st.button("Sair"):
-            st.session_state.logado = False
-            st.rerun()
+                c2.write(f"📄 Vencimento: {r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else '
