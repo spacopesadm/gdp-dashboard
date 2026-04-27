@@ -36,8 +36,6 @@ def tratar_valor_br(valor):
 
 def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
     def f(id, v): return f"{id}{len(v):02d}{v}"
-    
-    # Payload Estático
     payload = f("00", "01")
     payload += f("26", f("00", "br.gov.bcb.pix") + f("01", chave))
     payload += f("52", "0000")
@@ -48,8 +46,6 @@ def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
     payload += f("60", cidade[:15])
     payload += f("62", f("05", "PAGAMENTO"))
     payload += "6304"
-    
-    # CRC16
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
         crc ^= (char << 8)
@@ -57,73 +53,23 @@ def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
             if (crc & 0x8000): crc = (crc << 1) ^ 0x1021
             else: crc <<= 1
     payload += hex(crc & 0xFFFF).upper().replace('0X', '').zfill(4)
-    
-    # Geração com micro-ajuste de contraste
-    qr = segno.make(payload, error='M') # 'M' ajuda na recuperação de erro da câmera
+    qr = segno.make(payload, error='M')
     buffer = io.BytesIO()
-    qr.save(buffer, kind='png', scale=10, border=4) # Borda branca larga
+    qr.save(buffer, kind='png', scale=10, border=4)
     return buffer.getvalue(), payload
-
-# --- NA PARTE DO SIDEBAR (FINAL DO CÓDIGO) ---
-with st.sidebar:
-    if logo_path: st.image(logo_path, use_container_width=True)
-    st.header("Pagamento PIX")
-    total_p = sum(sel_val)
-    st.metric("Total", f"R$ {total_p:,.2f}")
-    
-    if total_p > 0:
-        img_qr, copia = gerar_pix_seguro(total_p, "pix@spacopes.com.br", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
-        
-        # CRIAR UMA MOLDURA BRANCA COM CSS PARA AJUDAR O FOCO
-        st.markdown("""
-            <div style="background-color: white; padding: 20px; border-radius: 10px; display: flex; justify-content: center; margin-bottom: 15px;">
-        """, unsafe_allow_html=True)
-        st.image(img_qr, width=200) # Tamanho fixo para não distorcer
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.info("Aponte a câmera acima ou use o código abaixo:")
-        st.code(copia)
-    else:
-        st.warning("Selecione uma fatura ao lado.")
-
-# --- NA PARTE DO SIDEBAR (FINAL DO CÓDIGO) ---
-with st.sidebar:
-    if logo_path: st.image(logo_path, use_container_width=True)
-    st.header("Pagamento PIX")
-    total_p = sum(sel_val)
-    st.metric("Total", f"R$ {total_p:,.2f}")
-    
-    if total_p > 0:
-        img_qr, copia = gerar_pix_seguro(total_p, "pix@spacopes.com.br", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
-        
-        # CRIAR UMA MOLDURA BRANCA COM CSS PARA AJUDAR O FOCO
-        st.markdown("""
-            <div style="background-color: white; padding: 20px; border-radius: 10px; display: flex; justify-content: center; margin-bottom: 15px;">
-        """, unsafe_allow_html=True)
-        st.image(img_qr, width=200) # Tamanho fixo para não distorcer
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.info("Aponte a câmera acima ou use o código abaixo:")
-        st.code(copia)
-    else:
-        st.warning("Selecione uma fatura ao lado.")
 
 @st.cache_data
 def carregar_dados():
     try:
         df = pd.read_excel("Pasta1.xlsx")
         df.columns = [str(c).strip().upper() for c in df.columns]
-        
         c_tel = [c for c in df.columns if any(x in c for x in ['TEL', 'CEL', 'FONE'])][0]
         c_nom = [c for c in df.columns if 'NOME' in c or 'RAZ' in c][0]
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
         c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
         c_ven = [c for c in df.columns if 'VENC' in c][0]
-        
-        # Coluna de pagamento
         c_pagto_list = [c for c in df.columns if any(x in c for x in ['PAGO', 'PAGTO', 'PAGAMENTO', 'BAIXA', 'DATA_P'])]
         c_pagto = c_pagto_list[0] if c_pagto_list else None
-        
         res = pd.DataFrame({
             'TEL': df[c_tel].apply(limpar_numero),
             'CLIENTE': df[c_nom],
@@ -131,23 +77,21 @@ def carregar_dados():
             'DOC': df[c_doc],
             'VENC': pd.to_datetime(df[c_ven], errors='coerce')
         })
-        
         if c_pagto:
-            # Se tiver algo escrito na coluna de pagamento, considera PAGO
             res['ESTA_PAGO'] = df[c_pagto].notna()
             res['INFO_PAGTO'] = df[c_pagto].astype(str).replace('nan', 'S/D')
         else:
             res['ESTA_PAGO'] = False
-            
         return res
     except: return None
 
-# --- APP ---
+# --- LÓGICA DO APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
-logos = ["logo_horizontal.png.png", "Logo varias cores versao 21g - 2019.png"]
-logo_path = next((f for f in logos if os.path.exists(f)), None)
+# DEFINIÇÃO DA LOGO (Movida para antes do uso para evitar NameError)
+logos_possiveis = ["logo_horizontal.png.png", "Logo varias cores versao 21g - 2019.png"]
+logo_path = next((f for f in logos_possiveis if os.path.exists(f)), None)
 
 if not st.session_state.logado:
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -166,7 +110,6 @@ if not st.session_state.logado:
 else:
     notas = st.session_state.dados
     st.markdown(f"## Olá, {notas['CLIENTE'].iloc[0]}")
-    
     tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagamentos"])
 
     with tab1:
@@ -180,11 +123,10 @@ else:
                 if c1.checkbox(f"Pagar Nota {r['DOC']}", key=f"sel_{idx}"):
                     sel_val.append(r['VALOR'])
                     sel_doc.append(r['DOC'])
-                
                 vencido = r['VENC'].date() < datetime.now().date() if pd.notnull(r['VENC']) else False
                 cor = "red" if vencido else "#c5a059"
-                data_v = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
-                c2.write(f"📄 Vencimento: {data_v}")
+                dv = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
+                c2.write(f"📄 Vencimento: {dv}")
                 c3.markdown(f"<span style='color:{cor}; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
                 st.divider()
 
@@ -203,16 +145,20 @@ else:
         if logo_path: st.image(logo_path, use_container_width=True)
         st.header("Pagamento PIX")
         total_p = sum(sel_val)
-        st.metric("Total", f"R$ {total_p:,.2f}")
-        
+        st.metric("Total Selecionado", f"R$ {total_p:,.2f}")
         if total_p > 0:
-            # TROQUE PARA O SEU PIX REAL
-            img_qr, copia = gerar_pix_seguro(total_p, "pix@spacopes.com.br", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
-            st.image(img_qr, use_container_width=True)
+            # Substitua abaixo pelo seu PIX real
+            img_qr, copia = gerar_pix_seguro(total_p, "seu_pix@aqui.com", "SPAÇO PÉS", "GOV VALADARES", sel_doc)
+            
+            # Moldura branca para leitura do QR Code
+            st.markdown('<div style="background-color: white; padding: 15px; border-radius: 10px; display: flex; justify-content: center; margin-bottom: 10px;">', unsafe_allow_html=True)
+            st.image(img_qr, width=200)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.info("Aponte a câmera ou copie o código:")
             st.code(copia)
         else:
-            st.warning("Selecione uma fatura para gerar o QR Code.")
-        
+            st.warning("Selecione uma fatura para gerar o PIX.")
         if st.button("Sair"):
             st.session_state.logado = False
             st.rerun()
