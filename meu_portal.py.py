@@ -35,14 +35,22 @@ def tratar_valor_br(valor):
     except: return 0.0
 
 def gerar_pix_seguro(valor, chave, nome, cidade, notas_selecionadas):
+    # Formatação padrão BC (EMV QRCPS)
     def f(id, v): return f"{id}{len(v):02d}{v}"
-    docs_limpos = [re.sub(r'\D', '', str(n)) for n in notas_selecionadas]
-    txt_notas = "N" + ",".join([n for n in docs_limpos if n])
-    txid = re.sub(r'[^A-Z0-9]', '', txt_notas.upper())[:25]
-    if not txid: txid = "PORTAL"
     
-    payload = f("00", "01") + f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) + "520400005303986" + f("54", f"{valor:.2f}") + "5802BR" + f("59", nome[:25]) + f("60", cidade[:15]) + f("62", f("05", txid)) + "6304"
+    # Payload Estruturado Simplificado
+    payload = f("00", "01") # Payload Format Indicator
+    payload += f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) # Merchant Account Info
+    payload += f("52", "0000") # Merchant Category Code
+    payload += f("53", "986") # Transaction Currency (BRL)
+    payload += f("54", f"{valor:.2f}") # Transaction Amount
+    payload += f("58", "BR") # Country Code
+    payload += f("59", nome[:25]) # Merchant Name
+    payload += f("60", cidade[:15]) # Merchant City
+    payload += f("62", f("05", "PAGAMENTO")) # Transaction ID (TXID curto e simples)
+    payload += "6304" # CRC16 Indicator
     
+    # Cálculo do CRC16 (Essencial para o banco validar)
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
         crc ^= (char << 8)
