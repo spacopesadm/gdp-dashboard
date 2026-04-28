@@ -127,7 +127,7 @@ else:
     # --- BARRA FIXA COM QR CODE ---
     total = sum(sel_v)
     if total > 0:
-        CHAVE_PIX = "09237407000101" # CNPJ da Spaço Pés
+        CHAVE_PIX = "pix@spacopes.com.br" # CNPJ da Spaço Pés
         qr_b64, copia = gerar_pix_seguro(total, CHAVE_PIX, "SPACO PES", "GOV VALADARES", "PORTAL")
         
         st.markdown(f"""
