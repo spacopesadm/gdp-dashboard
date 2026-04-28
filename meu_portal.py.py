@@ -45,12 +45,24 @@ st.markdown("""
 
 LOGO_URL = "https://i.postimg.cc/502WdGsD/logo-horizontal-png.png"
 
-# --- FUNÇÕES ---
+# --- FUNÇÃO DE VALOR CORRIGIDA ---
 def formatar_valor_real(valor):
     if pd.isna(valor): return 0.0
-    v_str = re.sub(r'\D', '', str(valor))
-    if not v_str: return 0.0
-    return float(v_str) / 100
+    try:
+        # Se já for um número decimal (ex: 172.58), apenas retorna ele
+        if isinstance(valor, (float, int)) and valor > 0:
+            # Se o valor for muito alto (ex: 17258), ele divide por 100
+            # Se for normal (ex: 172.58), ele mantém
+            if valor > 10000: # Ajuste este limite se tiver vendas acima de 10 mil reais
+                return float(valor) / 100
+            return float(valor)
+        
+        # Se vier como texto, limpa tudo e trata como centavos
+        v_str = re.sub(r'\D', '', str(valor))
+        if not v_str: return 0.0
+        return float(v_str) / 100
+    except:
+        return 0.0
 
 def gerar_pix(valor):
     chave = "pix@spacopes.com.br"
@@ -82,8 +94,7 @@ def carregar_dados():
         c_venc = [c for c in df.columns if 'VENC' in c][0]
         c_conta = df.columns[4] 
         c_pago = df.columns[7]  
-        c_comp = df.columns[24] 
-
+        
         base = pd.DataFrame()
         base['TEL_LIMPO'] = df[c_tel].astype(str).str.replace(r'\D', '', regex=True)
         base['CLIENTE'] = df[c_nome]
@@ -91,7 +102,6 @@ def carregar_dados():
         base['CONTA'] = df[c_conta].astype(str)
         base['VENC_ORIGINAL'] = df[c_venc].astype(str)
         base['PAGO'] = df[c_pago]
-        base['COMPRADOR'] = df[c_comp].fillna("N/I")
         return base
     except: return None
 
@@ -118,12 +128,11 @@ else:
     
     st.subheader(f"Olá, {dados['CLIENTE'].iloc[0]}")
     
-    # CRIAÇÃO DAS ABAS
     aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagos"])
     
     with aba_pendente:
         pendentes = dados[dados['PAGO'].isna() | (dados['PAGO'].astype(str).str.strip() == "")]
-        sel_v, sel_c = [], []
+        sel_v = []
         
         if pendentes.empty:
             st.success("Você não possui faturas pendentes.")
@@ -134,25 +143,21 @@ else:
                 with col1:
                     if st.checkbox(f"Nota: {r['CONTA']} | Venc: {r['VENC_ORIGINAL']}", key=f"p_{idx}"):
                         sel_v.append(r['VALOR_NUM'])
-                        sel_c.append(r['CONTA'])
                 col2.write(f"**R$ {r['VALOR_NUM']:,.2f}**")
                 st.divider()
             st.markdown('</div>', unsafe_allow_html=True)
 
     with aba_pago:
-        # Mostra o que TEM algo escrito na Coluna H
         pagos = dados[dados['PAGO'].notna() & (dados['PAGO'].astype(str).str.strip() != "")]
         if pagos.empty:
-            st.write("Nenhum pagamento registrado ainda.")
+            st.write("Nenhum pagamento registrado.")
         else:
             for idx, r in pagos.iterrows():
                 col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"✅ Nota: {r['CONTA']} (Paga em: {r['PAGO']})")
+                with col1: st.write(f"✅ Nota: {r['CONTA']} (Paga)")
                 col2.write(f"R$ {r['VALOR_NUM']:,.2f}")
                 st.divider()
 
-    # --- BARRA DE PIX ---
     total = sum(sel_v)
     if total > 0:
         qr_b64, pix_code = gerar_pix(total)
