@@ -75,11 +75,10 @@ def gerar_pix(valor):
 @st.cache_data(ttl=5)
 def carregar_dados_brutos():
     try:
-        # Lê a planilha sem frescura primeiro
         df = pd.read_excel("Pasta1.xlsx")
         df.columns = [str(c).strip().upper() for c in df.columns]
         
-        # Mapeamento dinâmico para não falhar se mudar o nome da coluna
+        # Mapeamento dinâmico de colunas
         col_tel = [c for c in df.columns if 'TEL' in c or 'FONE' in c][0]
         col_nome = [c for c in df.columns if 'NOME' in c or 'RAZAO' in c][0]
         col_valor = [c for c in df.columns if any(x in c for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
@@ -88,7 +87,6 @@ def carregar_dados_brutos():
         col_pago = df.columns[7]  # Coluna H
         col_comp = df.columns[24] # Coluna Y
 
-        # Criar base limpa
         base = pd.DataFrame()
         base['TEL_LIMPO'] = df[col_tel].astype(str).str.replace(r'\D', '', regex=True)
         base['CLIENTE'] = df[col_nome]
@@ -116,5 +114,66 @@ if not st.session_state.logado:
         df_base = carregar_dados_brutos()
         if df_base is not None:
             tel_cliente = re.sub(r'\D', '', acesso)
-            # Busca pelos últimos 8 dígitos (mais seguro)
-            match = df_base[df_base['TEL_LIMPO'].str.endswith(tel
+            # AQUI ESTAVA O ERRO (LINHA 120 CORRIGIDA)
+            match = df_base[df_base['TEL_LIMPO'].str.endswith(tel_cliente[-8:])].copy()
+            
+            if not match.empty:
+                st.session_state.dados_cliente = match
+                st.session_state.logado = True
+                st.rerun()
+            else:
+                st.error("Nenhuma conta encontrada para este número.")
+else:
+    st.markdown(f'<div class="logo-container"><img src="{LOGO_URL}" class="logo-img"></div>', unsafe_allow_html=True)
+    dados = st.session_state.dados_cliente
+    
+    # Filtra parcelas onde a Coluna H está vazia
+    pendentes = dados[dados['PAGO'].isna() | (dados['PAGO'].astype(str).str.strip() == "")]
+    
+    st.markdown('<div class="main-content">', unsafe_allow_html=True)
+    st.subheader(f"Olá, {dados['CLIENTE'].iloc[0]}")
+    
+    sel_v, sel_c = [], []
+    
+    if pendentes.empty:
+        st.success("Tudo em dia! Você não possui faturas pendentes.")
+    else:
+        for idx, r in pendentes.iterrows():
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                label = f"Nota: {r['CONTA']} | Vencimento: {r['VENC_ORIGINAL']}"
+                if st.checkbox(label, key=f"c_{idx}"):
+                    sel_v.append(r['VALOR_NUM'])
+                    sel_c.append(r['CONTA'])
+                st.caption(f"👤 Comprador: {r['COMPRADOR']}")
+            col2.write(f"**R$ {r['VALOR_NUM']:,.2f}**")
+            st.divider()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- BARRA DE PAGAMENTO ---
+    total = sum(sel_v)
+    if total > 0:
+        qr_b64, pix_code = gerar_pix(total)
+        st.markdown(f"""
+            <div class="footer-fixa">
+                <img src="data:image/png;base64,{qr_b64}" width="90">
+                <div style="text-align: left;">
+                    <span style="font-size: 11px; font-weight: bold;">TOTAL SELECIONADO</span><br>
+                    <span style="font-size: 24px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <button onclick="navigator.clipboard.writeText('{pix_code}')" 
+                        style="background-color: #c5a059; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                        COPIAR PIX
+                    </button>
+                    <a href="https://wa.me/553332782113" target="_blank" 
+                        style="background-color: #25d366; color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold; text-align: center; font-size: 12px;">
+                        ENVIAR COMPROVANTE
+                    </a>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    if st.button("Sair"):
+        st.session_state.clear()
+        st.rerun()
