@@ -9,15 +9,13 @@ from datetime import datetime
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO CSS PROFISSIONAL (REMOVE POPUPS E MENUS) ---
+# --- ESTILO CSS (LIMPEZA TOTAL DO VISUAL) ---
 st.markdown("""
     <style>
-    /* Remove barra superior e menus do Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     .stDeployButton {display:none;}
-    
     .stApp { background-color: #FFFFFF !important; }
     :root { --gold: #c5a059; }
     
@@ -34,7 +32,7 @@ st.markdown("""
         gap: 15px;
         box-shadow: 0px -5px 15px rgba(0,0,0,0.1);
     }
-    .main-content { margin-bottom: 200px; }
+    .main-content { margin-bottom: 220px; }
     p, span, label, div { color: #121212 !important; }
     
     .btn-whats {
@@ -54,10 +52,15 @@ st.markdown("""
         background-color: #121212;
         margin: -2rem -2rem 2rem -2rem;
     }
+    .comprador-label {
+        font-size: 12px;
+        color: #666 !important;
+        font-style: italic;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE APOIO ---
+# --- FUNÇÕES ---
 def limpar_numero(texto):
     return re.sub(r'\D', '', str(texto)) if pd.notnull(texto) else ""
 
@@ -93,99 +96,94 @@ def carregar_dados():
         df = pd.read_excel("Pasta1.xlsx")
         df.columns = [str(c).strip().upper() for c in df.columns]
         
-        # Mapeamento dinâmico
+        # Mapeamento
         c_tel = [c for c in df.columns if 'TELEFONE' in c or 'FONE' in c][0]
         c_nom = [c for c in df.columns if 'NOME' in c or 'RAZ' in c][0]
         c_val = [c for c in df.columns if 'VALOR' in c or 'PRE' in c or 'VALENTIA' in c][0]
-        c_pago = df.columns[7] # Coluna H: Dt.Pagto
+        c_pago = df.columns[7]   # Coluna H
         c_ven = [c for c in df.columns if 'VENC' in c][0]
-        c_conta = df.columns[4] # Coluna E: N° Conta
+        c_conta = df.columns[4]  # Coluna E
+        c_comprador = df.columns[24] # Coluna Y (Índice 24)
 
         return pd.DataFrame({
             'TEL': df[c_tel].apply(limpar_numero),
             'CLIENTE': df[c_nom],
             'VALOR': df[c_val].apply(tratar_valor_br),
             'CONTA': df[c_conta].astype(str),
+            'COMPRADOR': df[c_comprador].fillna("Não informado"),
             'VENC': pd.to_datetime(df[c_ven], errors='coerce'),
-            'PAGO': df[c_pago] # Dt.Pagto
+            'PAGO': df[c_pago]
         })
     except: return None
 
-# --- FLUXO DO APLICATIVO ---
+# --- APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
 if not st.session_state.logado:
     st.markdown('<div class="logo-container"><h1 style="color:#c5a059; margin:0;">SPAÇO PÉS</h1></div>', unsafe_allow_html=True)
-    with st.container():
-        st.write("### Acesso ao Portal")
-        acesso = limpar_numero(st.text_input("Digite seu Telefone (com DDD)", type="password"))
-        if st.button("ACESSAR PORTAL"):
-            if df_base is not None:
-                match = df_base[df_base['TEL'].str.contains(acesso[-8:])]
-                if not match.empty:
-                    st.session_state.dados, st.session_state.logado = match, True
-                    st.rerun()
-                else: st.error("Cadastro não encontrado.")
+    acesso = limpar_numero(st.text_input("Seu Telefone", type="password"))
+    if st.button("ACESSAR PORTAL"):
+        if df_base is not None:
+            match = df_base[df_base['TEL'].str.contains(acesso[-8:])]
+            if not match.empty:
+                st.session_state.dados, st.session_state.logado = match, True
+                st.rerun()
 else:
     st.markdown('<div class="logo-container"><h1 style="color:#c5a059; margin:0;">SPAÇO PÉS</h1></div>', unsafe_allow_html=True)
-    
     dados = st.session_state.dados
-    st.markdown(f"#### Bem-vindo(a), {dados['CLIENTE'].iloc[0]}")
     
-    tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagos"])
+    tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico"])
     
     with tab1:
-        # FILTRO DE BUSCA
-        busca = st.text_input("🔍 Filtrar por N° Conta ou Data", placeholder="Ex: 030424")
+        filtro = st.text_input("🔍 Buscar por conta, comprador ou data")
         
         pendentes = dados[dados['PAGO'].isna()].sort_values('VENC')
-        if busca:
-            pendentes = pendentes[pendentes['CONTA'].str.contains(busca) | 
-                                 pendentes['VENC'].dt.strftime('%d/%m/%Y').str.contains(busca)]
+        if filtro:
+            pendentes = pendentes[
+                pendentes['CONTA'].str.contains(filtro, case=False) | 
+                pendentes['COMPRADOR'].str.contains(filtro, case=False)
+            ]
 
         sel_v, sel_c = [], []
         st.markdown('<div class="main-content">', unsafe_allow_html=True)
-        
-        if pendentes.empty:
-            st.info("Nenhuma conta pendente encontrada.")
-        else:
-            for idx, r in pendentes.iterrows():
-                col1, col2 = st.columns([4, 1])
-                dt = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
-                if col1.checkbox(f"N° CONTA: {r['CONTA']} | Vencimento: {dt}", key=f"p_{idx}"):
-                    sel_v.append(r['VALOR'])
-                    sel_c.append(r['CONTA'])
-                col2.write(f"R$ {r['VALOR']:,.2f}")
-                st.divider()
+        for idx, r in pendentes.iterrows():
+            col1, col2 = st.columns([4, 1])
+            dt = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
+            
+            # Exibição: Conta + Comprador
+            label_text = f"**N° CONTA: {r['CONTA']}** | Venc: {dt}"
+            if col1.checkbox(label_text, key=f"p_{idx}"):
+                sel_v.append(r['VALOR'])
+                sel_c.append(r['CONTA'])
+            
+            col1.markdown(f'<span class="comprador-label">👤 Comprador: {r["COMPRADOR"]}</span>', unsafe_allow_html=True)
+            col2.write(f"R$ {r['VALOR']:,.2f}")
+            st.divider()
         st.markdown('</div>', unsafe_allow_html=True)
 
     with tab2:
-        # Histórico olha para parcelas que têm data na Coluna H (PAGO)
         historico = dados[dados['PAGO'].notna()].sort_values('PAGO', ascending=False)
         if historico.empty:
-            st.write("Ainda não constam pagamentos baixados no sistema.")
+            st.info("Nenhum pagamento registrado.")
         else:
             for _, h in historico.iterrows():
-                dt_p = pd.to_datetime(h['PAGO']).strftime('%d/%m/%Y')
-                st.success(f"CONTA: {h['CONTA']} | Pago em: {dt_p} | Valor: R$ {h['VALOR']:,.2f}")
+                st.success(f"CONTA: {h['CONTA']} | Comprador: {h['COMPRADOR']} | Valor: R$ {h['VALOR']:,.2f}")
 
-    # --- BARRA DE PAGAMENTO FIXA ---
+    # --- BARRA FIXA ---
     total = sum(sel_v)
     if total > 0:
-        CHAVE_PIX = "pix@spacopes.com.br"
-        id_banco = f"C{sel_c[0]}"[:25]
-        qr_b64, copia = gerar_pix_seguro(total, CHAVE_PIX, "SPACO PES", "GOV VALADARES", id_banco)
+        CHAVE_PIX = "09237407000101"
+        qr_b64, copia = gerar_pix_seguro(total, CHAVE_PIX, "SPACO PES", "GOV VALADARES", f"C{sel_c[0]}"[:25])
         
-        lista_c = ", ".join([f"N° CONTA {c}" for c in sel_c])
-        msg = f"Olá! Paguei R$ {total:,.2f} referente: {lista_c}. Segue comprovante:"
+        msg = f"Olá! Paguei R$ {total:,.2f} referente à(s) conta(s): {', '.join(sel_c)}. Segue comprovante:"
         link_w = f"https://wa.me/553332782113?text={msg.replace(' ', '%20')}"
 
         st.markdown(f"""
             <div class="footer-fixa">
                 <img src="data:image/png;base64,{qr_b64}" width="80">
                 <div style="text-align: left;">
-                    <span style="font-size: 11px; font-weight: bold;">TOTAL SELECIONADO</span><br>
+                    <span style="font-size: 11px; font-weight: bold;">TOTAL</span><br>
                     <span style="font-size: 22px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -198,6 +196,6 @@ else:
             </div>
         """, unsafe_allow_html=True)
 
-    if st.sidebar.button("Sair do Portal"):
+    if st.sidebar.button("Sair"):
         st.session_state.logado = False
         st.rerun()
