@@ -72,7 +72,7 @@ def carregar_dados():
         return res
     except: return None
 
-# --- LÓGICA DE LOGIN ---
+# --- LOGIN ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
@@ -89,41 +89,41 @@ if not st.session_state.logado:
                     st.rerun()
                 else: st.error("Telefone não localizado.")
 else:
-    # --- ÁREA LOGADA ---
+    # --- ÁREA DO CLIENTE ---
     notas = st.session_state.dados
     pendentes = notas[notas['PAGO'].isna()].sort_values('VENC')
     
-    # 1. CABEÇALHO DE PAGAMENTO (Sempre visível no topo)
-    st.subheader("💳 Pagamento")
+    st.title("💳 Pagamento")
     
-    # Recipientes vazios para atualizar depois da seleção
-    area_total = st.empty()
-    area_pix = st.empty()
+    # Criamos os espaços onde o total e o Pix vão aparecer
+    container_topo = st.container()
     
     st.divider()
     
-    # 2. ABAS DE CONTEÚDO
     tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico"])
     
-    sel_val, sel_doc = [], []
+    selecionados_valores = []
+    selecionados_docs = []
     
     with tab1:
         if pendentes.empty:
             st.success("Tudo em dia!")
         else:
             for idx, r in pendentes.iterrows():
-                c1, c2, c3 = st.columns([0.5, 3, 1])
+                col_check, col_info, col_valor = st.columns([0.5, 3, 1])
+                
+                # Regra de cor para vencidos
                 hoje = datetime.now().date()
                 vencido = r['VENC'].date() < hoje if pd.notnull(r['VENC']) else False
-                cor = "red" if vencido else "#121212"
+                cor_texto = "red" if vencido else "#121212"
                 
-                if c1.checkbox(f"Pagar", key=idx): 
-                    sel_val.append(r['VALOR'])
-                    sel_doc.append(str(r['DOC']))
+                if col_check.checkbox(f"Pagar", key=f"chk_{idx}"): 
+                    selecionados_valores.append(r['VALOR'])
+                    selecionados_docs.append(str(r['DOC']))
                 
-                dv = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
-                c2.markdown(f"📄 Nota: {r['DOC']} | Vencimento: <span style='color:{cor}; font-weight:bold;'>{dv}</span>", unsafe_allow_html=True)
-                c3.write(f"**R$ {r['VALOR']:,.2f}**")
+                dt_venc = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
+                col_info.markdown(f"📄 Nota: {r['DOC']} | Vencimento: <span style='color:{cor_texto}; font-weight:bold;'>{dt_venc}</span>", unsafe_allow_html=True)
+                col_valor.write(f"**R$ {r['VALOR']:,.2f}**")
                 st.divider()
 
     with tab2:
@@ -134,9 +134,27 @@ else:
             cb.markdown(f"**R$ {r['VALOR']:,.2f}**")
             st.divider()
 
-    # 3. ATUALIZAR O TOPO COM BASE NA SELEÇÃO
-    total = sum(sel_val)
-    area_total.metric("Total Selecionado", f"R$ {total:,.2f}")
+    # --- ATUALIZAÇÃO DO TOPO (TOTAL E PIX) ---
+    total_geral = sum(selecionados_valores)
     
-    if total > 0:
-        with
+    with container_topo:
+        st.metric("Total das Notas Selecionadas", f"R$ {total_geral:,.2f}")
+        
+        if total_geral > 0:
+            # Identificador para o banco
+            id_banco = f"NOTA{selecionados_docs[0]}" if len(selecionados_docs) == 1 else "VARIAS"
+            chave_loja = "financeiro@spacopes.com.br"
+            
+            qr_img, pix_copia = gerar_pix_seguro(total_geral, chave_loja, "SPACO PES", "GOV VALADARES", id_banco)
+            
+            c_qr, c_txt = st.columns([1, 2])
+            c_qr.image(qr_img, width=200, caption="Escaneie para pagar")
+            with c_txt:
+                st.write("**Pix Copia e Cola:**")
+                st.code(pix_copia)
+        else:
+            st.info("Marque as caixinhas abaixo para gerar o Pix.")
+
+    if st.button("Sair"):
+        st.session_state.logado = False
+        st.rerun()
