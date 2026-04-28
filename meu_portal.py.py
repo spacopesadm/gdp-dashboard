@@ -9,43 +9,14 @@ import os
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- CSS PARA FORÇAR TEMA CLARO E BARRA FIXA ---
+# --- FORÇAR TEMA CLARO ---
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF !important; }
     :root { --gold: #c5a059; }
-    
-    /* Forçar textos em preto */
-    p, span, label, .stMarkdown, div, h1, h2, h3 { 
-        color: #121212 !important; 
-    }
-    
-    /* Estilo do Botão Dourado */
-    .stButton>button { 
-        background-color: var(--gold) !important; 
-        color: white !important; 
-        font-weight: bold;
-        border-radius: 10px;
-    }
-
-    /* Barra de Pagamento Fixa no Topo */
-    .fixed-header {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        background-color: #f8f9fa;
-        padding: 15px;
-        z-index: 999;
-        border-bottom: 2px solid var(--gold);
-        text-align: center;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
-    }
-    
-    /* Ajuste para o conteúdo não ficar por baixo da barra fixa */
-    .main-content {
-        margin-top: 120px;
-    }
+    p, span, label, .stMarkdown, div, h1, h2, h3 { color: #121212 !important; }
+    .stButton>button { background-color: var(--gold) !important; color: white !important; font-weight: bold; border-radius: 10px; }
+    .stTabs [aria-selected="true"] { color: var(--gold) !important; border-bottom-color: var(--gold) !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -101,7 +72,7 @@ def carregar_dados():
         return res
     except: return None
 
-# --- APP ---
+# --- LÓGICA DE LOGIN ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
@@ -118,22 +89,27 @@ if not st.session_state.logado:
                     st.rerun()
                 else: st.error("Telefone não localizado.")
 else:
+    # --- ÁREA LOGADA ---
     notas = st.session_state.dados
-    
-    # --- BARRA FIXA DE PAGAMENTO NO TOPO ---
-    st.markdown('<div class="main-content">', unsafe_allow_html=True)
-    
-    # Lógica de seleção (colocamos antes para o cabeçalho ler os valores)
     pendentes = notas[notas['PAGO'].isna()].sort_values('VENC')
-    sel_val, sel_doc = [], []
-
-    # Exibição do cabeçalho fixo
-    total_placeholder = st.empty()
     
+    # 1. CABEÇALHO DE PAGAMENTO (Sempre visível no topo)
+    st.subheader("💳 Pagamento")
+    
+    # Recipientes vazios para atualizar depois da seleção
+    area_total = st.empty()
+    area_pix = st.empty()
+    
+    st.divider()
+    
+    # 2. ABAS DE CONTEÚDO
     tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico"])
-
+    
+    sel_val, sel_doc = [], []
+    
     with tab1:
-        if pendentes.empty: st.success("Tudo em dia!")
+        if pendentes.empty:
+            st.success("Tudo em dia!")
         else:
             for idx, r in pendentes.iterrows():
                 c1, c2, c3 = st.columns([0.5, 3, 1])
@@ -155,12 +131,12 @@ else:
         for _, r in pagas.iterrows():
             ca, cb = st.columns([4, 1])
             ca.write(f"✅ Nota: {r['DOC']} | Pago em: {str(r['PAGO'])[:10]}")
-            cb.markdown(f"<span style='color:green; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
+            cb.markdown(f"**R$ {r['VALOR']:,.2f}**")
             st.divider()
 
-    # --- ATUALIZAÇÃO DA BARRA DE PAGAMENTO ---
+    # 3. ATUALIZAR O TOPO COM BASE NA SELEÇÃO
     total = sum(sel_val)
-    with total_placeholder.container():
-        st.markdown(f"""
-            <div style="background-color: #f8f9fa; padding: 10px; border-radius: 10px; border: 1px solid #c5a059; margin-bottom: 20px;">
-                <h
+    area_total.metric("Total Selecionado", f"R$ {total:,.2f}")
+    
+    if total > 0:
+        with
