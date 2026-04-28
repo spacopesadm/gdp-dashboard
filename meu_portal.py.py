@@ -43,7 +43,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-LOGO_URL = "https://raw.githubusercontent.com/jacovieira/spaco-pes/main/logo.png"
+LOGO_URL = "https://i.postimg.cc/502WdGsD/logo-horizontal-png.png"
 
 # --- FUNÇÕES ---
 def formatar_valor_real(valor):
@@ -53,7 +53,7 @@ def formatar_valor_real(valor):
     return float(v_str) / 100
 
 def gerar_pix(valor):
-    chave = "09237407000101"
+    chave = "pix@spacopes.com.br"
     def f(id, v): return f"{id}{len(v):02d}{v}"
     payload = f("00", "01") + f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) + \
               f("52", "0000") + f("53", "986") + f("54", f"{valor:.2f}") + \
