@@ -112,7 +112,7 @@ def carregar_dados():
     except: return None
 
 # --- INTERFACE ---
-LOGO_URL = "https://raw.githubusercontent.com/jacovieira/spaco-pes/main/logo.png"
+LOGO_URL = "https://i.postimg.cc/502WdGsD/logo-horizontal-png.png"
 
 if 'logado' not in st.session_state: st.session_state.logado = False
 
@@ -158,7 +158,7 @@ else:
     # --- BARRA FIXA CORRIGIDA ---
     total = sum(sel_v)
     if total > 0:
-        qr_b64, copia = gerar_pix_curto(total, "09237407000101")
+        qr_b64, copia = gerar_pix_curto(total, "pixspacopes.com.br")
         
         st.markdown(f"""
             <div class="footer-fixa">
