@@ -45,7 +45,7 @@ st.markdown("""
 
 LOGO_URL = "https://i.postimg.cc/502WdGsD/logo-horizontal-png.pnghttps://i.postimg.cc/502WdGsD/logo-horizontal-png.png"
 
-# --- FUNÇÕES DE APOIO ---
+# --- FUNÇÕES ---
 def formatar_valor_real(valor):
     if pd.isna(valor): return 0.0
     try:
@@ -85,20 +85,19 @@ def carregar_dados():
         c_venc = [c for c in df.columns if 'VENC' in c][0]
         c_conta = df.columns[4] 
         c_pago = df.columns[7]  
-        
+
         base = pd.DataFrame()
         base['TEL_LIMPO'] = df[c_tel].astype(str).str.replace(r'\D', '', regex=True)
         base['CLIENTE'] = df[c_nome]
         base['VALOR_NUM'] = df[c_valor].apply(formatar_valor_real)
         base['CONTA'] = df[c_conta].astype(str)
-        # Converte para data para poder ordenar corretamente
-        base['VENC_DATE'] = pd.to_datetime(df[c_venc], errors='coerce')
-        base['VENC_STR'] = base['VENC_DATE'].dt.strftime('%d/%m/%Y').fillna(df[c_venc].astype(str))
+        base['VENC_DATA'] = pd.to_datetime(df[c_venc], errors='coerce')
+        base['VENC_STR'] = base['VENC_DATA'].dt.strftime('%d/%m/%Y').fillna(df[c_venc].astype(str))
         base['PAGO'] = df[c_pago]
         return base
     except: return None
 
-# --- LÓGICA DE INTERFACE ---
+# --- INTERFACE ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 
 if not st.session_state.logado:
@@ -123,5 +122,62 @@ else:
     aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagos"])
     
     with aba_pendente:
-        # Ordena por data de vencimento (as mais velhas primeiro)
-        pendentes = dados[dados['PAGO'].isna() | (dados['PAGO'].astype(str).str.strip()
+        # CORREÇÃO DA LINHA 127: Filtro completo e fechado corretamente
+        pendentes = dados[dados['PAGO'].isna() | (dados['PAGO'].astype(str).str.strip() == "")].sort_values('VENC_DATA')
+        sel_v, sel_c = [], []
+        
+        if pendentes.empty:
+            st.success("Você não possui faturas pendentes.")
+        else:
+            st.markdown('<div class="main-content">', unsafe_allow_html=True)
+            for idx, r in pendentes.iterrows():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    if st.checkbox(f"Nota: {r['CONTA']} | Venc: {r['VENC_STR']}", key=f"p_{idx}"):
+                        sel_v.append(r['VALOR_NUM'])
+                        sel_c.append(r['CONTA'])
+                col2.write(f"**R$ {r['VALOR_NUM']:,.2f}**")
+                st.divider()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    with aba_pago:
+        pagos = dados[dados['PAGO'].notna() & (dados['PAGO'].astype(str).str.strip() != "")]
+        if pagos.empty:
+            st.write("Nenhum pagamento registrado.")
+        else:
+            for idx, r in pagos.iterrows():
+                col1, col2 = st.columns([3, 1])
+                with col1: st.write(f"✅ Nota: {r['CONTA']} | Pago em: {r['PAGO']}")
+                col2.write(f"R$ {r['VALOR_NUM']:,.2f}")
+                st.divider()
+
+    # --- BARRA DE PIX E WHATSAPP ---
+    total = sum(sel_v)
+    if total > 0:
+        qr_b64, pix_code = gerar_pix(total)
+        msg_w = f"Olá! Paguei R$ {total:,.2f} referente às notas: {', '.join(sel_c)}. Segue comprovante:".replace(' ', '%20')
+        link_w = f"https://wa.me/553332782113?text={msg_w}"
+
+        st.markdown(f"""
+            <div class="footer-fixa">
+                <img src="data:image/png;base64,{qr_b64}" width="85">
+                <div style="text-align: left;">
+                    <span style="font-size: 11px; font-weight: bold;">TOTAL</span><br>
+                    <span style="font-size: 22px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <button onclick="navigator.clipboard.writeText('{pix_code}')" 
+                        style="background-color: #c5a059; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 12px;">
+                        COPIAR PIX
+                    </button>
+                    <a href="{link_w}" target="_blank" 
+                        style="background-color: #25d366; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold; text-align: center; font-size: 12px;">
+                        ENVIAR COMPROVANTE
+                    </a>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    if st.button("Sair"):
+        st.session_state.clear()
+        st.rerun()
