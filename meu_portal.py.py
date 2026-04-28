@@ -10,7 +10,7 @@ st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide")
 
 # --- FUNÇÃO DE PIX DIRETA ---
 def gerar_pix(valor):
-    chave = "09237407000101" # Seu CNPJ
+    chave = "pix@spacopes.com.br" # Seu CNPJ
     def f(id, v): return f"{id}{len(v):02d}{v}"
     
     payload = f("00", "01") + f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) + \
