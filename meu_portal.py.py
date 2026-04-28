@@ -43,7 +43,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-LOGO_URL = "https://i.postimg.cc/502WdGsD/logo-horizontal-png.png"
+LOGO_URL = "https://i.postimg.cc/502WdGsD/logo-horizontal-png.pnghttps://i.postimg.cc/502WdGsD/logo-horizontal-png.png"
 
 # --- FUNÇÃO DE VALOR CORRIGIDA ---
 def formatar_valor_real(valor):
