@@ -9,17 +9,34 @@ import os
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO VISUAL ---
+# --- FORÇAR TEMA CLARO E CORES FIXAS ---
 st.markdown("""
     <style>
-    .stApp { background-color: #FFFFFF !important; }
+    /* Força fundo branco em tudo */
+    .stApp, div[data-testid="stSidebar"], .stTabs, [data-baseweb="tab-panel"] {
+        background-color: #FFFFFF !important;
+    }
+    /* Força texto preto e dourado */
     :root { --gold: #c5a059; }
-    p, span, label, .stMarkdown { color: #121212 !important; font-weight: 500 !important; }
+    p, span, label, .stMarkdown, li, td, th { 
+        color: #121212 !important; 
+        font-weight: 500 !important; 
+    }
     h1, h2, h3 { color: var(--gold) !important; font-family: 'Segoe UI', sans-serif; }
-    .stButton>button { background-color: var(--gold); color: white !important; border-radius: 8px; font-weight: bold; width: 100%; }
-    section[data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #e0e0e0; }
-    .stTabs [data-baseweb="tab"] { color: #121212; font-weight: bold; }
-    .stTabs [aria-selected="true"] { color: var(--gold) !important; border-bottom-color: var(--gold) !important; }
+    /* Botão Dourado */
+    .stButton>button { 
+        background-color: var(--gold); 
+        color: white !important; 
+        border: none;
+    }
+    /* Estilo das abas */
+    .stTabs [data-baseweb="tab"] { color: #666666; }
+    .stTabs [aria-selected="true"] { 
+        color: var(--gold) !important; 
+        border-bottom-color: var(--gold) !important; 
+    }
+    /* Input de texto */
+    input { background-color: #f0f2f6 !important; color: #121212 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -52,7 +69,6 @@ def gerar_pix_seguro(valor, chave, nome, cidade, identificador="PORTAL"):
     qr.save(buffer, kind='png', scale=15, border=4)
     return buffer.getvalue(), payload
 
-# AJUSTE DE PERFORMANCE: O cache agora "vence" a cada 60 segundos
 @st.cache_data(ttl=60) 
 def carregar_dados():
     try:
@@ -76,7 +92,7 @@ def carregar_dados():
         return res
     except: return None
 
-# --- LOGICA ---
+# --- LÓGICA DE ACESSO ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
@@ -136,9 +152,9 @@ else:
         id_pix = f"NOTA{sel_doc[0]}"[:25] if len(sel_doc) == 1 else ("VARIAS" if len(sel_doc) > 1 else "PORTAL")
         st.metric("Total", f"R$ {total:,.2f}")
         if total > 0:
-            chave_real = "financeiro@spacopes.com.br" # <--- CONFERIR CHAVE
+            chave_real = "financeiro@spacopes.com.br" 
             img_qr, copia = gerar_pix_seguro(total, chave_real, "SPACO PES", "GOV VALADARES", id_pix)
-            st.markdown('<div style="background-color: white; padding: 15px; border-radius: 10px; display: flex; justify-content: center;">', unsafe_allow_html=True)
+            st.markdown('<div style="background-color: white; padding: 15px; border-radius: 10px; display: flex; justify-content: center; border: 2px solid #f0f0f0;">', unsafe_allow_html=True)
             st.image(img_qr, width=220)
             st.markdown('</div>', unsafe_allow_html=True)
             st.code(copia)
