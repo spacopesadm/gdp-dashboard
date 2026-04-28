@@ -173,7 +173,7 @@ else:
     # --- BARRA FIXA ---
     total = sum(sel_v)
     if total > 0:
-        CHAVE_PIX = "09237407000101"
+        CHAVE_PIX = "pix@spacopes.com.br"
         qr_b64, copia = gerar_pix_seguro(total, CHAVE_PIX, "SPACO PES", "GOV VALADARES", f"C{sel_c[0]}"[:25])
         
         msg = f"Olá! Paguei R$ {total:,.2f} referente à(s) conta(s): {', '.join(sel_c)}. Segue comprovante:"
