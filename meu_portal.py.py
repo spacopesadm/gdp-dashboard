@@ -45,24 +45,15 @@ st.markdown("""
 
 LOGO_URL = "https://i.postimg.cc/502WdGsD/logo-horizontal-png.pnghttps://i.postimg.cc/502WdGsD/logo-horizontal-png.png"
 
-# --- FUNÇÃO DE VALOR CORRIGIDA ---
+# --- FUNÇÕES DE APOIO ---
 def formatar_valor_real(valor):
     if pd.isna(valor): return 0.0
     try:
-        # Se já for um número decimal (ex: 172.58), apenas retorna ele
         if isinstance(valor, (float, int)) and valor > 0:
-            # Se o valor for muito alto (ex: 17258), ele divide por 100
-            # Se for normal (ex: 172.58), ele mantém
-            if valor > 10000: # Ajuste este limite se tiver vendas acima de 10 mil reais
-                return float(valor) / 100
-            return float(valor)
-        
-        # Se vier como texto, limpa tudo e trata como centavos
+            return float(valor) / 100 if valor > 10000 else float(valor)
         v_str = re.sub(r'\D', '', str(valor))
-        if not v_str: return 0.0
-        return float(v_str) / 100
-    except:
-        return 0.0
+        return float(v_str) / 100 if v_str else 0.0
+    except: return 0.0
 
 def gerar_pix(valor):
     chave = "pix@spacopes.com.br"
@@ -100,12 +91,14 @@ def carregar_dados():
         base['CLIENTE'] = df[c_nome]
         base['VALOR_NUM'] = df[c_valor].apply(formatar_valor_real)
         base['CONTA'] = df[c_conta].astype(str)
-        base['VENC_ORIGINAL'] = df[c_venc].astype(str)
+        # Converte para data para poder ordenar corretamente
+        base['VENC_DATE'] = pd.to_datetime(df[c_venc], errors='coerce')
+        base['VENC_STR'] = base['VENC_DATE'].dt.strftime('%d/%m/%Y').fillna(df[c_venc].astype(str))
         base['PAGO'] = df[c_pago]
         return base
     except: return None
 
-# --- INTERFACE ---
+# --- LÓGICA DE INTERFACE ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 
 if not st.session_state.logado:
@@ -125,56 +118,10 @@ if not st.session_state.logado:
 else:
     st.markdown(f'<div class="logo-container"><img src="{LOGO_URL}" class="logo-img"></div>', unsafe_allow_html=True)
     dados = st.session_state.dados_cliente
-    
     st.subheader(f"Olá, {dados['CLIENTE'].iloc[0]}")
     
     aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagos"])
     
     with aba_pendente:
-        pendentes = dados[dados['PAGO'].isna() | (dados['PAGO'].astype(str).str.strip() == "")]
-        sel_v = []
-        
-        if pendentes.empty:
-            st.success("Você não possui faturas pendentes.")
-        else:
-            st.markdown('<div class="main-content">', unsafe_allow_html=True)
-            for idx, r in pendentes.iterrows():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    if st.checkbox(f"Nota: {r['CONTA']} | Venc: {r['VENC_ORIGINAL']}", key=f"p_{idx}"):
-                        sel_v.append(r['VALOR_NUM'])
-                col2.write(f"**R$ {r['VALOR_NUM']:,.2f}**")
-                st.divider()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    with aba_pago:
-        pagos = dados[dados['PAGO'].notna() & (dados['PAGO'].astype(str).str.strip() != "")]
-        if pagos.empty:
-            st.write("Nenhum pagamento registrado.")
-        else:
-            for idx, r in pagos.iterrows():
-                col1, col2 = st.columns([3, 1])
-                with col1: st.write(f"✅ Nota: {r['CONTA']} (Paga)")
-                col2.write(f"R$ {r['VALOR_NUM']:,.2f}")
-                st.divider()
-
-    total = sum(sel_v)
-    if total > 0:
-        qr_b64, pix_code = gerar_pix(total)
-        st.markdown(f"""
-            <div class="footer-fixa">
-                <img src="data:image/png;base64,{qr_b64}" width="85">
-                <div style="text-align: left;">
-                    <span style="font-size: 11px; font-weight: bold;">TOTAL SELECIONADO</span><br>
-                    <span style="font-size: 22px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
-                </div>
-                <button onclick="navigator.clipboard.writeText('{pix_code}')" 
-                    style="background-color: #c5a059; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                    COPIAR PIX
-                </button>
-            </div>
-        """, unsafe_allow_html=True)
-
-    if st.button("Sair"):
-        st.session_state.clear()
-        st.rerun()
+        # Ordena por data de vencimento (as mais velhas primeiro)
+        pendentes = dados[dados['PAGO'].isna() | (dados['PAGO'].astype(str).str.strip()
