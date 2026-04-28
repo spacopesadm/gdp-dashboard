@@ -55,7 +55,7 @@ def tratar_valor_br(valor):
 
 def gerar_pix_seguro(valor, chave, nome, cidade, identificador="PORTAL"):
     def f(id, v): return f"{id}{len(v):02d}{v}"
-    # Remove caracteres especiais para o banco não rejeitar o código
+    # Identificador limpo para o banco (máximo 25 caracteres)
     id_limpo = re.sub(r'[^A-Z0-9]', '', identificador.upper())[:25]
     
     payload = f("00", "01") + f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) + \
@@ -80,23 +80,31 @@ def gerar_pix_seguro(valor, chave, nome, cidade, identificador="PORTAL"):
 def carregar_dados():
     try:
         df = pd.read_excel("Pasta1.xlsx")
+        # Garante que os nomes das colunas estão limpos
         df.columns = [str(c).strip().upper() for c in df.columns]
+        
+        # Mapeamento das colunas baseado na sua planilha
         c_tel = [c for c in df.columns if any(x in c for x in ['TEL', 'CEL', 'FONE'])][0]
         c_nom = [c for c in df.columns if 'NOME' in c or 'RAZ' in c][0]
         c_val = [c for c in df.columns if any(x in str(c) for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
-        c_doc = [c for c in df.columns if any(x in str(c) for x in ['NUM', 'DOC', 'NOTA'])][0]
-        c_ven = [c for c in df.columns if 'VENC' in c][0]
         c_pago = [c for c in df.columns if any(x in c for x in ['PAGO', 'PAGTO', 'BAIXA'])][0]
+        c_ven = [c for c in df.columns if 'VENC' in c][0]
         
+        # AQUI BUSCAMOS A COLUNA E (NÚMERO DA PARCELA/CONTA)
+        # Se a coluna não tiver um nome claro, pegamos pela posição (índice 4 é a coluna E)
+        c_conta = df.columns[4] 
+
         return pd.DataFrame({
             'TEL': df[c_tel].apply(limpar_numero),
             'CLIENTE': df[c_nom],
             'VALOR': df[c_val].apply(tratar_valor_br),
-            'DOC': df[c_doc].astype(str), # Garantir que o número da nota seja texto
+            'CONTA': df[c_conta].astype(str), # Coluna E
             'VENC': pd.to_datetime(df[c_ven], errors='coerce'),
             'PAGO': df[c_pago]
         })
-    except: return None
+    except Exception as e:
+        st.error(f"Erro ao carregar colunas: {e}")
+        return None
 
 # --- APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
@@ -111,6 +119,7 @@ if not st.session_state.logado:
             if not match.empty:
                 st.session_state.dados, st.session_state.logado = match, True
                 st.rerun()
+            else: st.error("Telefone não localizado.")
 else:
     notas = st.session_state.dados
     pendentes = notas[notas['PAGO'].isna()].sort_values('VENC')
@@ -118,17 +127,17 @@ else:
     st.markdown(f"### Olá, {notas['CLIENTE'].iloc[0]}")
     tab1, tab2 = st.tabs(["📌 Parcelas", "✅ Histórico"])
     
-    sel_v, sel_d = [], []
+    sel_v, sel_c = [], []
     
     with tab1:
         st.markdown('<div class="main-content">', unsafe_allow_html=True)
         for idx, r in pendentes.iterrows():
             col1, col2 = st.columns([4, 1])
             dt = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
-            # O checkbox agora guarda o número exato da nota
-            if col1.checkbox(f"Nota: {r['DOC']} | Vencimento: {dt}", key=f"chk_{idx}"):
+            # Exibe o N° CONTA na lista para o cliente conferir
+            if col1.checkbox(f"N° CONTA: {r['CONTA']} | Vencimento: {dt}", key=f"chk_{idx}"):
                 sel_v.append(r['VALOR'])
-                sel_d.append(r['DOC'])
+                sel_c.append(r['CONTA'])
             col2.write(f"R$ {r['VALOR']:,.2f}")
             st.divider()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -138,34 +147,17 @@ else:
     if total > 0:
         CHAVE_PIX = "09237407000101"
         
-        # Define o identificador dinâmico: se for uma nota, usa o número dela. 
-        # Se forem várias, lista as primeiras para caber no campo do banco.
-        texto_notas = ",".join(sel_d)
-        id_banco = f"N{texto_notas}"[:25] 
-        
+        # Identificador para o Banco (Máximo 25 chars)
+        id_banco = f"CONTA{sel_c[0]}" if len(sel_c) == 1 else "VARIAS"
         qr_b64, copia = gerar_pix_seguro(total, CHAVE_PIX, "SPACO PES", "GOV VALADARES", id_banco)
         
-        # Mensagem do WhatsApp com os números das notas selecionadas
-        msg_whats = f"Olá! Realizei o pagamento via Pix no valor de R$ {total:,.2f} referente à(s) nota(s): {texto_notas}. Segue o comprovante:"
+        # Mensagem do WhatsApp com o formato solicitado
+        lista_contas = ", ".join([f"N° CONTA {c}" for c in sel_c])
+        msg_whats = f"Olá! Realizei o pagamento via Pix no valor de R$ {total:,.2f} referente à(s) parcela(s): {lista_contas}. Segue o comprovante:"
         link_whats = f"https://wa.me/553332782113?text={msg_whats.replace(' ', '%20')}"
 
         st.markdown(f"""
             <div class="footer-fixa">
                 <img src="data:image/png;base64,{qr_b64}" width="90">
                 <div style="text-align: left;">
-                    <span style="font-size: 11px; font-weight: bold;">TOTAL</span><br>
-                    <span style="font-size: 20px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 5px;">
-                    <button onclick="navigator.clipboard.writeText('{copia}')" 
-                        style="background-color: #c5a059; color: white; border: none; padding: 8px; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: bold;">
-                        COPIAR PIX
-                    </button>
-                    <a href="{link_whats}" target="_blank" class="btn-whats">ENVIAR COMPROVANTE</a>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    if st.button("Sair"):
-        st.session_state.logado = False
-        st.rerun()
+                    <span style="
