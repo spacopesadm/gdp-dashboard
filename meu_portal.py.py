@@ -132,7 +132,7 @@ else:
     # --- BARRA FIXA ATUALIZADA ---
     total = sum(sel_v)
     if total > 0:
-        CHAVE_PIX = "09237407000101"
+        CHAVE_PIX = "pix@spacopes.com.br"
         id_banco = f"C{sel_c[0]}" if len(sel_c) == 1 else "VARIAS"
         qr_b64, copia = gerar_pix_seguro(total, CHAVE_PIX, "SPACO PES", "GOV VALADARES", id_banco)
         
