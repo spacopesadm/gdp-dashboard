@@ -72,99 +72,49 @@ def gerar_pix(valor):
     qr.save(buffer, kind='png', scale=5)
     return base64.b64encode(buffer.getvalue()).decode(), payload
 
-@st.cache_data(ttl=10)
-def carregar_e_limpar_dados():
+@st.cache_data(ttl=5)
+def carregar_dados_brutos():
     try:
+        # Lê a planilha sem frescura primeiro
         df = pd.read_excel("Pasta1.xlsx")
-        # Padroniza nomes das colunas
         df.columns = [str(c).strip().upper() for c in df.columns]
         
-        # Localiza colunas por palavra-chave para não "sumir" nada
-        c_tel = [c for c in df.columns if 'TEL' in c or 'FONE' in c][0]
-        c_pago = df.columns[7] # Coluna H (Pago)
-        c_venc = [c for c in df.columns if 'VENC' in c][0]
-        c_valor = [c for c in df.columns if 'VALOR' in c or 'PRE' in c or 'VALENTIA' in c][0]
-        c_conta = df.columns[4] # Coluna E
-        c_comprador = df.columns[24] # Coluna Y
-        c_nome = [c for c in df.columns if 'NOME' in c or 'RAZAO' in c][0]
+        # Mapeamento dinâmico para não falhar se mudar o nome da coluna
+        col_tel = [c for c in df.columns if 'TEL' in c or 'FONE' in c][0]
+        col_nome = [c for c in df.columns if 'NOME' in c or 'RAZAO' in c][0]
+        col_valor = [c for c in df.columns if any(x in c for x in ['VALOR', 'PRE', 'VALENTIA'])][0]
+        col_venc = [c for c in df.columns if 'VENC' in c][0]
+        col_conta = df.columns[4] # Coluna E
+        col_pago = df.columns[7]  # Coluna H
+        col_comp = df.columns[24] # Coluna Y
 
-        return pd.DataFrame({
-            'TEL': df[c_tel].astype(str).str.replace(r'\D', '', regex=True),
-            'CLIENTE': df[c_nome],
-            'VALOR': df[c_valor].apply(formatar_valor_real),
-            'CONTA': df[c_conta].astype(str),
-            'COMPRADOR': df[c_comprador].fillna("N/I"),
-            'VENC': pd.to_datetime(df[c_venc], errors='coerce'),
-            'PAGO': df[c_pago]
-        })
-    except: return None
+        # Criar base limpa
+        base = pd.DataFrame()
+        base['TEL_LIMPO'] = df[col_tel].astype(str).str.replace(r'\D', '', regex=True)
+        base['CLIENTE'] = df[col_nome]
+        base['VALOR_NUM'] = df[col_valor].apply(formatar_valor_real)
+        base['CONTA'] = df[col_conta].astype(str)
+        base['VENC_ORIGINAL'] = df[col_venc].astype(str)
+        base['PAGO'] = df[col_pago]
+        base['COMPRADOR'] = df[col_comp].fillna("N/I")
+        
+        return base
+    except Exception as e:
+        st.error(f"Erro na planilha: {e}")
+        return None
 
 # --- INTERFACE ---
-if 'logado' not in st.session_state: st.session_state.logado = False
+if 'logado' not in st.session_state: 
+    st.session_state.logado = False
 
 if not st.session_state.logado:
     st.markdown(f'<div class="logo-container"><img src="{LOGO_URL}" class="logo-img"></div>', unsafe_allow_html=True)
     st.write("### 🔑 Acesso ao Portal")
     acesso = st.text_input("Seu Telefone (com DDD)", placeholder="Apenas números")
-    if st.button("Consultar Contas"):
-        df_base = carregar_e_limpar_dados()
+    
+    if st.button("Consultar Faturas"):
+        df_base = carregar_dados_brutos()
         if df_base is not None:
-            tel_busca = re.sub(r'\D', '', acesso)
-            match = df_base[df_base['TEL'].str.endswith(tel_busca[-8:])].copy()
-            if not match.empty:
-                st.session_state.dados = match
-                st.session_state.logado = True
-                st.rerun()
-            else: st.error("Telefone não encontrado.")
-else:
-    st.markdown(f'<div class="logo-container"><img src="{LOGO_URL}" class="logo-img"></div>', unsafe_allow_html=True)
-    dados_cli = st.session_state.dados
-    # Filtra apenas o que NÃO tem data de pagamento na coluna H
-    pendentes = dados_cli[dados_cli['PAGO'].isna()].sort_values('VENC')
-    
-    st.markdown('<div class="main-content">', unsafe_allow_html=True)
-    st.subheader(f"Olá, {dados_cli['CLIENTE'].iloc[0]}")
-    
-    sel_v, sel_c = [], []
-    if pendentes.empty:
-        st.success("Tudo certo! Você não possui parcelas pendentes.")
-    else:
-        for idx, r in pendentes.iterrows():
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                # O checkbox que faz a mágica da soma
-                if st.checkbox(f"Nota: {r['CONTA']} | Venc: {r['VENC'].strftime('%d/%m/%Y')}", key=f"n_{idx}"):
-                    sel_v.append(r['VALOR'])
-                    sel_c.append(r['CONTA'])
-                st.caption(f"👤 Comprador: {r['COMPRADOR']}")
-            col2.write(f"**R$ {r['VALOR']:,.2f}**")
-            st.divider()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- BARRA FIXA DE PAGAMENTO ---
-    total = sum(sel_v)
-    if total > 0:
-        qr_b64, pix_code = gerar_pix(total)
-        st.markdown(f"""
-            <div class="footer-fixa">
-                <img src="data:image/png;base64,{qr_b64}" width="90">
-                <div style="text-align: left;">
-                    <span style="font-size: 11px; font-weight: bold;">TOTAL SELECIONADO</span><br>
-                    <span style="font-size: 24px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 5px;">
-                    <button onclick="navigator.clipboard.writeText('{pix_code}')" 
-                        style="background-color: #c5a059; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                        COPIAR PIX
-                    </button>
-                    <a href="https://wa.me/553332782113" target="_blank" 
-                        style="background-color: #25d366; color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold; text-align: center; font-size: 12px;">
-                        WHATSAPP
-                    </a>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    if st.button("Sair"):
-        st.session_state.clear()
-        st.rerun()
+            tel_cliente = re.sub(r'\D', '', acesso)
+            # Busca pelos últimos 8 dígitos (mais seguro)
+            match = df_base[df_base['TEL_LIMPO'].str.endswith(tel
