@@ -9,34 +9,43 @@ import os
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- FORÇAR TEMA CLARO E CORES FIXAS ---
+# --- CSS PARA FORÇAR TEMA CLARO E BARRA FIXA ---
 st.markdown("""
     <style>
-    /* Força fundo branco em tudo */
-    .stApp, div[data-testid="stSidebar"], .stTabs, [data-baseweb="tab-panel"] {
-        background-color: #FFFFFF !important;
-    }
-    /* Força texto preto e dourado */
+    .stApp { background-color: #FFFFFF !important; }
     :root { --gold: #c5a059; }
-    p, span, label, .stMarkdown, li, td, th { 
+    
+    /* Forçar textos em preto */
+    p, span, label, .stMarkdown, div, h1, h2, h3 { 
         color: #121212 !important; 
-        font-weight: 500 !important; 
     }
-    h1, h2, h3 { color: var(--gold) !important; font-family: 'Segoe UI', sans-serif; }
-    /* Botão Dourado */
+    
+    /* Estilo do Botão Dourado */
     .stButton>button { 
-        background-color: var(--gold); 
+        background-color: var(--gold) !important; 
         color: white !important; 
-        border: none;
+        font-weight: bold;
+        border-radius: 10px;
     }
-    /* Estilo das abas */
-    .stTabs [data-baseweb="tab"] { color: #666666; }
-    .stTabs [aria-selected="true"] { 
-        color: var(--gold) !important; 
-        border-bottom-color: var(--gold) !important; 
+
+    /* Barra de Pagamento Fixa no Topo */
+    .fixed-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background-color: #f8f9fa;
+        padding: 15px;
+        z-index: 999;
+        border-bottom: 2px solid var(--gold);
+        text-align: center;
+        box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
     }
-    /* Input de texto */
-    input { background-color: #f0f2f6 !important; color: #121212 !important; }
+    
+    /* Ajuste para o conteúdo não ficar por baixo da barra fixa */
+    .main-content {
+        margin-top: 120px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -92,18 +101,14 @@ def carregar_dados():
         return res
     except: return None
 
-# --- LÓGICA DE ACESSO ---
+# --- APP ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
-
-logos_possiveis = ["logo_horizontal.png.png", "Logo varias cores versao 21g - 2019.png"]
-logo_path = next((f for f in logos_possiveis if os.path.exists(f)), None)
 
 if not st.session_state.logado:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if logo_path: st.image(logo_path, use_container_width=True)
-        st.write("### Portal do Cliente")
+        st.write("### 👠 SPAÇO PÉS - Portal")
         acesso = limpar_numero(st.text_input("Seu Telefone", type="password"))
         if st.button("ACESSAR"):
             if df_base is not None:
@@ -114,12 +119,20 @@ if not st.session_state.logado:
                 else: st.error("Telefone não localizado.")
 else:
     notas = st.session_state.dados
-    st.markdown(f"## Olá, {notas['CLIENTE'].iloc[0]}")
+    
+    # --- BARRA FIXA DE PAGAMENTO NO TOPO ---
+    st.markdown('<div class="main-content">', unsafe_allow_html=True)
+    
+    # Lógica de seleção (colocamos antes para o cabeçalho ler os valores)
+    pendentes = notas[notas['PAGO'].isna()].sort_values('VENC')
+    sel_val, sel_doc = [], []
+
+    # Exibição do cabeçalho fixo
+    total_placeholder = st.empty()
+    
     tab1, tab2 = st.tabs(["📌 Contas a Pagar", "✅ Histórico"])
 
     with tab1:
-        pendentes = notas[notas['PAGO'].isna()].sort_values('VENC')
-        sel_val, sel_doc = [], []
         if pendentes.empty: st.success("Tudo em dia!")
         else:
             for idx, r in pendentes.iterrows():
@@ -127,9 +140,11 @@ else:
                 hoje = datetime.now().date()
                 vencido = r['VENC'].date() < hoje if pd.notnull(r['VENC']) else False
                 cor = "red" if vencido else "#121212"
+                
                 if c1.checkbox(f"Pagar", key=idx): 
                     sel_val.append(r['VALOR'])
                     sel_doc.append(str(r['DOC']))
+                
                 dv = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
                 c2.markdown(f"📄 Nota: {r['DOC']} | Vencimento: <span style='color:{cor}; font-weight:bold;'>{dv}</span>", unsafe_allow_html=True)
                 c3.write(f"**R$ {r['VALOR']:,.2f}**")
@@ -137,29 +152,15 @@ else:
 
     with tab2:
         pagas = notas[notas['PAGO'].notna()].sort_values('VENC', ascending=False)
-        if pagas.empty: st.info("Sem histórico.")
-        else:
-            for _, r in pagas.iterrows():
-                ca, cb = st.columns([4, 1])
-                ca.write(f"✅ Nota: {r['DOC']} | Pago em: {str(r['PAGO'])[:10]}")
-                cb.markdown(f"<span style='color:green; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
-                st.divider()
+        for _, r in pagas.iterrows():
+            ca, cb = st.columns([4, 1])
+            ca.write(f"✅ Nota: {r['DOC']} | Pago em: {str(r['PAGO'])[:10]}")
+            cb.markdown(f"<span style='color:green; font-weight:bold;'>R$ {r['VALOR']:,.2f}</span>", unsafe_allow_html=True)
+            st.divider()
 
-    with st.sidebar:
-        if logo_path: st.image(logo_path, use_container_width=True)
-        st.header("Pagamento")
-        total = sum(sel_val)
-        id_pix = f"NOTA{sel_doc[0]}"[:25] if len(sel_doc) == 1 else ("VARIAS" if len(sel_doc) > 1 else "PORTAL")
-        st.metric("Total", f"R$ {total:,.2f}")
-        if total > 0:
-            chave_real = "financeiro@spacopes.com.br" 
-            img_qr, copia = gerar_pix_seguro(total, chave_real, "SPACO PES", "GOV VALADARES", id_pix)
-            st.markdown('<div style="background-color: white; padding: 15px; border-radius: 10px; display: flex; justify-content: center; border: 2px solid #f0f0f0;">', unsafe_allow_html=True)
-            st.image(img_qr, width=220)
-            st.markdown('</div>', unsafe_allow_html=True)
-            st.code(copia)
-        else: st.warning("Selecione uma nota.")
-        st.divider()
-        if st.button("Sair"):
-            st.session_state.logado = False
-            st.rerun()
+    # --- ATUALIZAÇÃO DA BARRA DE PAGAMENTO ---
+    total = sum(sel_val)
+    with total_placeholder.container():
+        st.markdown(f"""
+            <div style="background-color: #f8f9fa; padding: 10px; border-radius: 10px; border: 1px solid #c5a059; margin-bottom: 20px;">
+                <h
