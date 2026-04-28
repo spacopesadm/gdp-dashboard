@@ -4,19 +4,22 @@ import re
 import io
 import segno
 import base64
-from datetime import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO CSS ---
+# --- ESTILO CSS (LIMPEZA DE POPUPS E AJUSTE DE LOGO) ---
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     .stDeployButton {display:none;}
+    /* Remove botões de ajuda e popups do Streamlit */
+    .stException, .stStatusWidget, button[title="View source"] {display:none !important;}
+    
     .stApp { background-color: #FFFFFF !important; }
+    
     .footer-fixa {
         position: fixed;
         bottom: 0; left: 0; width: 100%;
@@ -30,36 +33,28 @@ st.markdown("""
         gap: 15px;
         box-shadow: 0px -5px 15px rgba(0,0,0,0.1);
     }
-    .main-content { margin-bottom: 220px; }
-    .btn-whats {
-        background-color: #25d366;
-        color: white !important;
-        padding: 10px 15px;
-        border-radius: 8px;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 14px;
-        text-align: center;
-        display: block;
-    }
+    .main-content { margin-bottom: 250px; }
+    
     .logo-container {
         text-align: center;
         padding: 20px;
         background-color: #121212;
         margin: -2rem -2rem 2rem -2rem;
     }
+    .logo-img {
+        max-width: 200px;
+        height: auto;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÃO PIX CORRIGIDA (VERSÃO ESTÁVEL) ---
-def gerar_pix_seguro(valor, chave, nome="SPACO PES", cidade="GOV VALADARES", id_nota="PORTAL"):
+# --- FUNÇÃO PIX (SOMA CORRIGIDA) ---
+def gerar_pix_estavel(valor, chave, nome="SPACO PES", cidade="GOV VALADARES"):
     def f(id, v): return f"{id}{len(v):02d}{v}"
     
-    # Limpeza rigorosa do identificador para o banco
-    id_limpo = re.sub(r'[^A-Z0-9]', '', str(id_nota).upper())[:20]
-    if not id_limpo: id_limpo = "PGTO"
+    # Identificador fixo e curto para evitar erro de "chave não encontrada"
+    id_fixo = "PORTALSP" 
 
-    # Montagem do Payload conforme padrão BC
     payload = f("00", "01") + \
               f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) + \
               f("52", "0000") + f("53", "986") + \
@@ -67,9 +62,8 @@ def gerar_pix_seguro(valor, chave, nome="SPACO PES", cidade="GOV VALADARES", id_
               f("58", "BR") + \
               f("59", nome[:25]) + \
               f("60", cidade[:15]) + \
-              f("62", f("05", id_limpo)) + "6304"
+              f("62", f("05", id_fixo)) + "6304"
     
-    # Cálculo CRC16
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
         crc ^= (char << 8)
@@ -83,6 +77,15 @@ def gerar_pix_seguro(valor, chave, nome="SPACO PES", cidade="GOV VALADARES", id_
     buffer = io.BytesIO()
     qr.save(buffer, kind='png', scale=5, border=1)
     return base64.b64encode(buffer.getvalue()).decode(), payload_final
+
+def limpar_numero(texto):
+    return re.sub(r'\D', '', str(texto)) if pd.notnull(texto) else ""
+
+def tratar_valor_br(valor):
+    if pd.isna(valor): return 0.0
+    v = str(valor).replace('R$', '').replace(' ', '').replace('.', '').replace(',', '.')
+    try: return float(v)
+    except: return 0.0
 
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -108,79 +111,78 @@ def carregar_dados():
         })
     except: return None
 
-def limpar_numero(texto):
-    return re.sub(r'\D', '', str(texto)) if pd.notnull(texto) else ""
-
-def tratar_valor_br(valor):
-    if pd.isna(valor): return 0.0
-    v = str(valor).replace('R$', '').replace(' ', '').replace('.', '').replace(',', '.')
-    try: return float(v)
-    except: return 0.0
-
-# --- LÓGICA DE LOGIN ---
+# --- LÓGICA DE INTERFACE ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 df_base = carregar_dados()
 
+# HEADER COM LOGO
+# DICA: Substitua o link abaixo pelo link direto da sua imagem (hospedada no GitHub ou Imbb)
+LOGO_URL = "https://raw.githubusercontent.com/jacovieira/spaco-pes/main/logo.png" 
+
+def exibir_header():
+    st.markdown(f'''
+        <div class="logo-container">
+            <img src="{LOGO_URL}" class="logo-img" alt="SPAÇO PÉS">
+        </div>
+    ''', unsafe_allow_html=True)
+
 if not st.session_state.logado:
-    st.markdown('<div class="logo-container"><h1 style="color:#c5a059; margin:0;">SPAÇO PÉS</h1></div>', unsafe_allow_html=True)
-    acesso = limpar_numero(st.text_input("Telefone cadastrado", type="password"))
-    if st.button("ENTRAR"):
-        if df_base is not None:
-            match = df_base[df_base['TEL'].str.endswith(acesso[-8:])]
-            if not match.empty:
-                st.session_state.dados, st.session_state.logado = match, True
-                st.rerun()
+    exibir_header()
+    col_l, col_r = st.columns([1, 2])
+    with col_r:
+        acesso = limpar_numero(st.text_input("Digite seu Telefone", type="password"))
+        if st.button("ACESSAR MINHAS CONTAS"):
+            if df_base is not None:
+                match = df_base[df_base['TEL'].str.endswith(acesso[-8:])]
+                if not match.empty:
+                    st.session_state.dados, st.session_state.logado = match, True
+                    st.rerun()
 else:
-    st.markdown('<div class="logo-container"><h1 style="color:#c5a059; margin:0;">SPAÇO PÉS</h1></div>', unsafe_allow_html=True)
+    exibir_header()
     dados = st.session_state.dados
-    tab1, tab2 = st.tabs(["📌 Parcelas", "✅ Histórico"])
-
-    with tab1:
-        busca = st.text_input("🔍 Buscar conta...")
-        pendentes = dados[dados['PAGO'].isna()].sort_values('VENC')
-        if busca:
-            pendentes = pendentes[pendentes['CONTA'].str.contains(busca) | pendentes['COMPRADOR'].str.contains(busca, case=False)]
-
-        sel_v, sel_c = [], []
-        st.markdown('<div class="main-content">', unsafe_allow_html=True)
-        for idx, r in pendentes.iterrows():
-            col1, col2 = st.columns([4, 1])
-            if col1.checkbox(f"CONTA: {r['CONTA']} | Venc: {r['VENC'].strftime('%d/%m/%Y')}", key=idx):
+    
+    # Aba de Parcelas
+    pendentes = dados[dados['PAGO'].isna()].sort_values('VENC')
+    
+    st.markdown('<div class="main-content">', unsafe_allow_html=True)
+    st.subheader(f"Olá, {dados['CLIENTE'].iloc[0]}")
+    
+    sel_v, sel_c = [], []
+    for idx, r in pendentes.iterrows():
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.checkbox(f"Nota: {r['CONTA']} | Venc: {r['VENC'].strftime('%d/%m/%Y')}", key=idx):
                 sel_v.append(r['VALOR'])
                 sel_c.append(r['CONTA'])
-            col1.markdown(f'<span style="font-size:12px; color:gray;">👤 {r["COMPRADOR"]}</span>', unsafe_allow_html=True)
-            col2.write(f"R$ {r['VALOR']:,.2f}")
-            st.divider()
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(f'<p style="margin-left: 30px; font-size: 13px; color: #666;">👤 Comprador: {r["COMPRADOR"]}</p>', unsafe_allow_html=True)
+        col2.write(f"R$ {r['VALOR']:,.2f}")
+        st.divider()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    with tab2:
-        pagos = dados[dados['PAGO'].notna()]
-        if pagos.empty: st.write("Nenhum histórico.")
-        else: st.dataframe(pagos[['CONTA', 'COMPRADOR', 'VALOR', 'PAGO']], use_container_width=True)
-
-    # --- BARRA FIXA (PIX CORRIGIDO) ---
+    # --- BARRA DE PAGAMENTO FIXA ---
     total = sum(sel_v)
     if total > 0:
-        CHAVE_PIX = "pix@spacopes.com.br"
-        # Gerando o Pix com o novo motor corrigido
-        qr_b64, copia = gerar_pix_seguro(total, CHAVE_PIX, id_nota=sel_c[0])
+        CHAVE_PIX = "09237407000101"
+        qr_b64, copia = gerar_pix_estavel(total, CHAVE_PIX)
         
-        msg = f"Olá! Paguei R$ {total:,.2f} referente à(s) conta(s): {', '.join(sel_c)}. Segue comprovante:"
-        link_w = f"https://wa.me/553332782113?text={msg.replace(' ', '%20')}"
+        link_w = f"https://wa.me/553332782113?text=Paguei R$ {total:.2f} (Notas: {', '.join(sel_c)})"
 
         st.markdown(f"""
             <div class="footer-fixa">
-                <img src="data:image/png;base64,{qr_b64}" width="80">
+                <img src="data:image/png;base64,{qr_b64}" width="90">
                 <div style="text-align: left;">
-                    <span style="font-size: 11px; font-weight: bold;">TOTAL</span><br>
-                    <span style="font-size: 20px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
+                    <span style="font-size: 12px; font-weight: bold; color: #121212;">VALOR TOTAL</span><br>
+                    <span style="font-size: 24px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 5px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
                     <button onclick="navigator.clipboard.writeText('{copia}')" 
-                        style="background-color: #c5a059; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: bold;">
+                        style="background-color: #c5a059; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px;">
                         COPIAR PIX
                     </button>
-                    <a href="{link_w}" target="_blank" class="btn-whats">ENVIAR COMPROVANTE</a>
+                    <a href="{link_w}" target="_blank" 
+                        style="background-color: #25d366; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-weight: bold; font-size: 14px; text-align: center;">
+                        ENVIAR COMPROVANTE
+                    </a>
                 </div>
             </div>
         """, unsafe_allow_html=True)
