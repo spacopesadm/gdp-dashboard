@@ -37,6 +37,7 @@ st.markdown("""
         text-decoration: none;
         font-weight: bold;
         font-size: 14px;
+        text-align: center;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -54,8 +55,8 @@ def tratar_valor_br(valor):
 
 def gerar_pix_seguro(valor, chave, nome, cidade, identificador="PORTAL"):
     def f(id, v): return f"{id}{len(v):02d}{v}"
-    # Limita identificador a 25 caracteres sem espaços para o banco aceitar
-    id_limpo = re.sub(r'\W+', '', identificador)[:25].upper()
+    # Remove caracteres especiais para o banco não rejeitar o código
+    id_limpo = re.sub(r'[^A-Z0-9]', '', identificador.upper())[:25]
     
     payload = f("00", "01") + f("26", f("00", "br.gov.bcb.pix") + f("01", chave)) + \
               f("52", "0000") + f("53", "986") + f("54", f"{valor:.2f}") + \
@@ -91,7 +92,7 @@ def carregar_dados():
             'TEL': df[c_tel].apply(limpar_numero),
             'CLIENTE': df[c_nom],
             'VALOR': df[c_val].apply(tratar_valor_br),
-            'DOC': df[c_doc],
+            'DOC': df[c_doc].astype(str), # Garantir que o número da nota seja texto
             'VENC': pd.to_datetime(df[c_ven], errors='coerce'),
             'PAGO': df[c_pago]
         })
@@ -124,9 +125,10 @@ else:
         for idx, r in pendentes.iterrows():
             col1, col2 = st.columns([4, 1])
             dt = r['VENC'].strftime('%d/%m/%Y') if pd.notnull(r['VENC']) else "S/D"
+            # O checkbox agora guarda o número exato da nota
             if col1.checkbox(f"Nota: {r['DOC']} | Vencimento: {dt}", key=f"chk_{idx}"):
                 sel_v.append(r['VALOR'])
-                sel_d.append(str(r['DOC']))
+                sel_d.append(r['DOC'])
             col2.write(f"R$ {r['VALOR']:,.2f}")
             st.divider()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -135,12 +137,16 @@ else:
     total = sum(sel_v)
     if total > 0:
         CHAVE_PIX = "09237407000101"
-        # Agora o identificador pega o número da nota selecionada
-        id_banco = f"NOTA{sel_d[0]}" if len(sel_d) == 1 else "VARIAS"
+        
+        # Define o identificador dinâmico: se for uma nota, usa o número dela. 
+        # Se forem várias, lista as primeiras para caber no campo do banco.
+        texto_notas = ",".join(sel_d)
+        id_banco = f"N{texto_notas}"[:25] 
+        
         qr_b64, copia = gerar_pix_seguro(total, CHAVE_PIX, "SPACO PES", "GOV VALADARES", id_banco)
         
-        # Link para o WhatsApp
-        msg_whats = f"Olá! Realizei o pagamento via Pix no valor de R$ {total:,.2f} referente à nota {', '.join(sel_d)}. Segue o comprovante:"
+        # Mensagem do WhatsApp com os números das notas selecionadas
+        msg_whats = f"Olá! Realizei o pagamento via Pix no valor de R$ {total:,.2f} referente à(s) nota(s): {texto_notas}. Segue o comprovante:"
         link_whats = f"https://wa.me/553332782113?text={msg_whats.replace(' ', '%20')}"
 
         st.markdown(f"""
