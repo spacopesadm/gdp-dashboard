@@ -117,7 +117,7 @@ df_base = carregar_dados()
 
 # HEADER COM LOGO
 # DICA: Substitua o link abaixo pelo link direto da sua imagem (hospedada no GitHub ou Imbb)
-LOGO_URL = "https://postimg.cc/TyF4nkMc" 
+LOGO_URL = "https://i.postimg.cc/502WdGsD/logo-horizontal-png.png" 
 
 def exibir_header():
     st.markdown(f'''
