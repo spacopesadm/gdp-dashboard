@@ -4,6 +4,7 @@ import re
 import io
 import segno
 import base64
+from datetime import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
@@ -45,7 +46,7 @@ st.markdown("""
 
 LOGO_URL = "https://raw.githubusercontent.com/jacovieira/spaco-pes/main/logo.png"
 
-# --- FUNÇÕES ---
+# --- FUNÇÕES DE CÁLCULO ---
 def formatar_valor_real(valor):
     if pd.isna(valor): return 0.0
     try:
@@ -54,6 +55,23 @@ def formatar_valor_real(valor):
         v_str = re.sub(r'\D', '', str(valor))
         return float(v_str) / 100 if v_str else 0.0
     except: return 0.0
+
+def calcular_valor_com_juros(valor_original, data_vencimento):
+    if pd.isna(data_vencimento):
+        return valor_original, 0
+    
+    hoje = datetime.now().date()
+    venc = data_vencimento.date()
+    
+    if hoje > venc:
+        dias_atraso = (hoje - venc).days
+        if dias_atraso > 5:
+            # Regra: Valor + (Dias * 0,2%)
+            taxa_juros = (dias_atraso * 0.002)
+            valor_final = valor_original * (1 + taxa_juros)
+            return valor_final, dias_atraso
+            
+    return valor_original, 0
 
 def gerar_pix(valor):
     chave = "09237407000101"
@@ -89,7 +107,7 @@ def carregar_dados():
         base = pd.DataFrame()
         base['TEL_LIMPO'] = df[c_tel].astype(str).str.replace(r'\D', '', regex=True)
         base['CLIENTE'] = df[c_nome]
-        base['VALOR_NUM'] = df[c_valor].apply(formatar_valor_real)
+        base['VALOR_ORIGINAL'] = df[c_valor].apply(formatar_valor_real)
         base['CONTA'] = df[c_conta].astype(str)
         base['VENC_DATA'] = pd.to_datetime(df[c_venc], errors='coerce')
         base['VENC_STR'] = base['VENC_DATA'].dt.strftime('%d/%m/%Y').fillna(df[c_venc].astype(str))
@@ -122,7 +140,6 @@ else:
     aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagos"])
     
     with aba_pendente:
-        # CORREÇÃO DA LINHA 127: Filtro completo e fechado corretamente
         pendentes = dados[dados['PAGO'].isna() | (dados['PAGO'].astype(str).str.strip() == "")].sort_values('VENC_DATA')
         sel_v, sel_c = [], []
         
@@ -131,12 +148,23 @@ else:
         else:
             st.markdown('<div class="main-content">', unsafe_allow_html=True)
             for idx, r in pendentes.iterrows():
+                # Calcula juros no momento da exibição
+                valor_atualizado, atraso = calcular_valor_com_juros(r['VALOR_ORIGINAL'], r['VENC_DATA'])
+                
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    if st.checkbox(f"Nota: {r['CONTA']} | Venc: {r['VENC_STR']}", key=f"p_{idx}"):
-                        sel_v.append(r['VALOR_NUM'])
+                    label = f"Nota: {r['CONTA']} | Venc: {r['VENC_STR']}"
+                    if atraso > 0:
+                        label += f" (Vencida há {atraso} dias)"
+                    
+                    if st.checkbox(label, key=f"p_{idx}"):
+                        sel_v.append(valor_atualizado)
                         sel_c.append(r['CONTA'])
-                col2.write(f"**R$ {r['VALOR_NUM']:,.2f}**")
+                    
+                    if atraso > 0:
+                        st.caption(f"⚠️ Valor original: R$ {r['VALOR_ORIGINAL']:,.2f} + juros de 0,2%/dia")
+                
+                col2.write(f"**R$ {valor_atualizado:,.2f}**")
                 st.divider()
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -148,21 +176,21 @@ else:
             for idx, r in pagos.iterrows():
                 col1, col2 = st.columns([3, 1])
                 with col1: st.write(f"✅ Nota: {r['CONTA']} | Pago em: {r['PAGO']}")
-                col2.write(f"R$ {r['VALOR_NUM']:,.2f}")
+                col2.write(f"R$ {r['VALOR_ORIGINAL']:,.2f}")
                 st.divider()
 
     # --- BARRA DE PIX E WHATSAPP ---
     total = sum(sel_v)
     if total > 0:
         qr_b64, pix_code = gerar_pix(total)
-        msg_w = f"Olá! Paguei R$ {total:,.2f} referente às notas: {', '.join(sel_c)}. Segue comprovante:".replace(' ', '%20')
+        msg_w = f"Olá! Paguei R$ {total:,.2f} referente às notas: {', '.join(sel_c)} (com juros inclusos). Segue comprovante:".replace(' ', '%20')
         link_w = f"https://wa.me/553332782113?text={msg_w}"
 
         st.markdown(f"""
             <div class="footer-fixa">
                 <img src="data:image/png;base64,{qr_b64}" width="85">
                 <div style="text-align: left;">
-                    <span style="font-size: 11px; font-weight: bold;">TOTAL</span><br>
+                    <span style="font-size: 11px; font-weight: bold;">TOTAL COM JUROS</span><br>
                     <span style="font-size: 22px; color: #c5a059; font-weight: bold;">R$ {total:,.2f}</span>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 5px;">
