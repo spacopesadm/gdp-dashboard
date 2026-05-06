@@ -66,7 +66,6 @@ def calcular_valor_com_juros(valor_original, data_vencimento):
     if hoje > venc:
         dias_atraso = (hoje - venc).days
         if dias_atraso > 5:
-            # Regra: Valor + (Dias * 0,2%)
             taxa_juros = (dias_atraso * 0.002)
             valor_final = valor_original * (1 + taxa_juros)
             return valor_final, dias_atraso
@@ -109,9 +108,15 @@ def carregar_dados():
         base['CLIENTE'] = df[c_nome]
         base['VALOR_ORIGINAL'] = df[c_valor].apply(formatar_valor_real)
         base['CONTA'] = df[c_conta].astype(str)
+        
+        # Tratamento de datas para ordenação
         base['VENC_DATA'] = pd.to_datetime(df[c_venc], errors='coerce')
         base['VENC_STR'] = base['VENC_DATA'].dt.strftime('%d/%m/%Y').fillna(df[c_venc].astype(str))
-        base['PAGO'] = df[c_pago]
+        
+        base['PAGO_VALOR'] = df[c_pago]
+        # Converte coluna de pagamento para data (se possível) para ordenar o histórico
+        base['PAGO_DATA_ORDEM'] = pd.to_datetime(df[c_pago], errors='coerce', dayfirst=True)
+        
         return base
     except: return None
 
@@ -140,7 +145,8 @@ else:
     aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagos"])
     
     with aba_pendente:
-        pendentes = dados[dados['PAGO'].isna() | (dados['PAGO'].astype(str).str.strip() == "")].sort_values('VENC_DATA')
+        # Pendentes: Ordenados pelo vencimento mais antigo primeiro
+        pendentes = dados[dados['PAGO_VALOR'].isna() | (dados['PAGO_VALOR'].astype(str).str.strip() == "")].sort_values('VENC_DATA')
         sel_v, sel_c = [], []
         
         if pendentes.empty:
@@ -148,34 +154,31 @@ else:
         else:
             st.markdown('<div class="main-content">', unsafe_allow_html=True)
             for idx, r in pendentes.iterrows():
-                # Calcula juros no momento da exibição
                 valor_atualizado, atraso = calcular_valor_com_juros(r['VALOR_ORIGINAL'], r['VENC_DATA'])
-                
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     label = f"Nota: {r['CONTA']} | Venc: {r['VENC_STR']}"
-                    if atraso > 0:
-                        label += f" (Vencida há {atraso} dias)"
-                    
+                    if atraso > 0: label += f" (Vencida há {atraso} dias)"
                     if st.checkbox(label, key=f"p_{idx}"):
                         sel_v.append(valor_atualizado)
                         sel_c.append(r['CONTA'])
-                    
                     if atraso > 0:
-                        st.caption(f"⚠️ Valor original: R$ {r['VALOR_ORIGINAL']:,.2f} + juros de 0,2%/dia")
-                
+                        st.caption(f"⚠️ Original: R$ {r['VALOR_ORIGINAL']:,.2f} + juros de 0,2%/dia")
                 col2.write(f"**R$ {valor_atualizado:,.2f}**")
                 st.divider()
             st.markdown('</div>', unsafe_allow_html=True)
 
     with aba_pago:
-        pagos = dados[dados['PAGO'].notna() & (dados['PAGO'].astype(str).str.strip() != "")]
+        # PAGOS: Ordenados pela data de pagamento mais RECENTE primeiro
+        pagos = dados[dados['PAGO_VALOR'].notna() & (dados['PAGO_VALOR'].astype(str).str.strip() != "")]
+        pagos = pagos.sort_values('PAGO_DATA_ORDEM', ascending=False)
+        
         if pagos.empty:
             st.write("Nenhum pagamento registrado.")
         else:
             for idx, r in pagos.iterrows():
                 col1, col2 = st.columns([3, 1])
-                with col1: st.write(f"✅ Nota: {r['CONTA']} | Pago em: {r['PAGO']}")
+                with col1: st.write(f"✅ Nota: {r['CONTA']} | Pago em: {r['PAGO_VALOR']}")
                 col2.write(f"R$ {r['VALOR_ORIGINAL']:,.2f}")
                 st.divider()
 
@@ -183,7 +186,7 @@ else:
     total = sum(sel_v)
     if total > 0:
         qr_b64, pix_code = gerar_pix(total)
-        msg_w = f"Olá! Paguei R$ {total:,.2f} referente às notas: {', '.join(sel_c)} (com juros inclusos). Segue comprovante:".replace(' ', '%20')
+        msg_w = f"Olá! Paguei R$ {total:,.2f} referente às notas: {', '.join(sel_c)}. Segue comprovante:".replace(' ', '%20')
         link_w = f"https://wa.me/553332782113?text={msg_w}"
 
         st.markdown(f"""
