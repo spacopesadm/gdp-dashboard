@@ -9,7 +9,7 @@ from datetime import datetime
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal SPAÇO PÉS", layout="wide", page_icon="👠")
 
-# --- ESTILO CSS ---
+# --- ESTILO CSS CORRIGIDO ---
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -18,15 +18,21 @@ st.markdown("""
     .stDeployButton {display:none;}
     .stApp { background-color: #FFFFFF !important; }
     
+    /* Ajuste da Logo para remover espaço em branco */
     .logo-container {
         text-align: center;
-        padding: 20px;
+        padding: 15px;
         background-color: #121212;
-        margin: -2rem -2rem 2rem -2rem;
-        margin-bottom: 20px;
+        margin: -1rem -1rem 1rem -1rem; /* Margem reduzida para tirar o vácuo */
     }
-    .logo-img { max-width: 200px; height: auto; }
+    .logo-img { max-width: 180px; height: auto; }
     
+    /* Texto em Vermelho para Vencidos */
+    .vencido-text {
+        color: #F75059;
+        font-weight: bold;
+    }
+
     .footer-fixa {
         position: fixed;
         bottom: 0; left: 0; width: 100%;
@@ -40,13 +46,13 @@ st.markdown("""
         gap: 20px;
         box-shadow: 0px -5px 15px rgba(0,0,0,0.1);
     }
-    .main-content { margin-bottom: 250px; }
+    .main-content { margin-bottom: 200px; }
     </style>
     """, unsafe_allow_html=True)
 
 LOGO_URL = "https://raw.githubusercontent.com/jacovieira/spaco-pes/main/logo.png"
 
-# --- FUNÇÕES DE CÁLCULO ---
+# --- FUNÇÕES ---
 def formatar_valor_real(valor):
     if pd.isna(valor): return 0.0
     try:
@@ -59,17 +65,14 @@ def formatar_valor_real(valor):
 def calcular_valor_com_juros(valor_original, data_vencimento):
     if pd.isna(data_vencimento):
         return valor_original, 0
-    
     hoje = datetime.now().date()
     venc = data_vencimento.date()
-    
     if hoje > venc:
         dias_atraso = (hoje - venc).days
         if dias_atraso > 5:
             taxa_juros = (dias_atraso * 0.002)
             valor_final = valor_original * (1 + taxa_juros)
             return valor_final, dias_atraso
-            
     return valor_original, 0
 
 def gerar_pix(valor):
@@ -108,19 +111,14 @@ def carregar_dados():
         base['CLIENTE'] = df[c_nome]
         base['VALOR_ORIGINAL'] = df[c_valor].apply(formatar_valor_real)
         base['CONTA'] = df[c_conta].astype(str)
-        
-        # Tratamento de datas para ordenação
         base['VENC_DATA'] = pd.to_datetime(df[c_venc], errors='coerce')
         base['VENC_STR'] = base['VENC_DATA'].dt.strftime('%d/%m/%Y').fillna(df[c_venc].astype(str))
-        
         base['PAGO_VALOR'] = df[c_pago]
-        # Converte coluna de pagamento para data (se possível) para ordenar o histórico
         base['PAGO_DATA_ORDEM'] = pd.to_datetime(df[c_pago], errors='coerce', dayfirst=True)
-        
         return base
     except: return None
 
-# --- INTERFACE ---
+# --- LÓGICA DE LOGIN ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 
 if not st.session_state.logado:
@@ -145,7 +143,6 @@ else:
     aba_pendente, aba_pago = st.tabs(["📌 Contas a Pagar", "✅ Histórico de Pagos"])
     
     with aba_pendente:
-        # Pendentes: Ordenados pelo vencimento mais antigo primeiro
         pendentes = dados[dados['PAGO_VALOR'].isna() | (dados['PAGO_VALOR'].astype(str).str.strip() == "")].sort_values('VENC_DATA')
         sel_v, sel_c = [], []
         
@@ -154,25 +151,34 @@ else:
         else:
             st.markdown('<div class="main-content">', unsafe_allow_html=True)
             for idx, r in pendentes.iterrows():
-                valor_atualizado, atraso = calcular_valor_com_juros(r['VALOR_ORIGINAL'], r['VENC_DATA'])
+                valor_at, atraso = calcular_valor_com_juros(r['VALOR_ORIGINAL'], r['VENC_DATA'])
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    label = f"Nota: {r['CONTA']} | Venc: {r['VENC_STR']}"
-                    if atraso > 0: label += f" (Vencida há {atraso} dias)"
-                    if st.checkbox(label, key=f"p_{idx}"):
-                        sel_v.append(valor_atualizado)
+                    # Aplica a cor vermelha se estiver vencida
+                    texto_nota = f"Nota: {r['CONTA']} | Venc: {r['VENC_STR']}"
+                    if atraso > 0:
+                        st.markdown(f'<span class="vencido-text">{texto_nota} (Vencida há {atraso} dias)</span>', unsafe_allow_html=True)
+                    
+                    if st.checkbox(f"Selecionar Nota {r['CONTA']}", key=f"p_{idx}"):
+                        sel_v.append(valor_at)
                         sel_c.append(r['CONTA'])
+                    
                     if atraso > 0:
                         st.caption(f"⚠️ Original: R$ {r['VALOR_ORIGINAL']:,.2f} + juros de 0,2%/dia")
-                col2.write(f"**R$ {valor_atualizado:,.2f}**")
+                    else:
+                        st.write(texto_nota)
+                
+                # Valor também fica em vermelho se estiver vencido
+                if atraso > 0:
+                    col2.markdown(f'<p class="vencido-text">**R$ {valor_at:,.2f}**</p>', unsafe_allow_html=True)
+                else:
+                    col2.write(f"**R$ {valor_at:,.2f}**")
                 st.divider()
             st.markdown('</div>', unsafe_allow_html=True)
 
     with aba_pago:
-        # PAGOS: Ordenados pela data de pagamento mais RECENTE primeiro
         pagos = dados[dados['PAGO_VALOR'].notna() & (dados['PAGO_VALOR'].astype(str).str.strip() != "")]
         pagos = pagos.sort_values('PAGO_DATA_ORDEM', ascending=False)
-        
         if pagos.empty:
             st.write("Nenhum pagamento registrado.")
         else:
@@ -182,7 +188,7 @@ else:
                 col2.write(f"R$ {r['VALOR_ORIGINAL']:,.2f}")
                 st.divider()
 
-    # --- BARRA DE PIX E WHATSAPP ---
+    # --- BARRA DE PIX ---
     total = sum(sel_v)
     if total > 0:
         qr_b64, pix_code = gerar_pix(total)
